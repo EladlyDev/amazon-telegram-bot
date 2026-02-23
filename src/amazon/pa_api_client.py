@@ -51,9 +51,9 @@ class AmazonAPIConfig:
     access_key: str
     secret_key: str
     partner_tag: str
-    host: str = "webservices.amazon.com"
-    region: str = "us-east-1"
-    marketplace: str = "www.amazon.com"
+    host: str = "webservices.amazon.sa"
+    region: str = "eu-west-1"
+    marketplace: str = "www.amazon.sa"
 
 
 # ---------------------------------------------------------------------------

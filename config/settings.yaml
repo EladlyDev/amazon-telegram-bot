@@ -1,7 +1,7 @@
 amazon:
-  marketplace: "www.amazon.com"
-  region: "us-east-1"
-  host: "webservices.amazon.com"
+  marketplace: "www.amazon.sa"
+  region: "eu-west-1"
+  host: "webservices.amazon.sa"
 
 telegram:
   channel_id: "@your_channel"
