@@ -134,6 +134,7 @@ class PAAPIClient(AmazonClient):
             "PartnerTag": self._partner_tag,
             "PartnerType": "Associates",
             "Marketplace": "www.amazon.sa",
+            "LanguagesOfPreference": ["ar_AE"],
             "Resources": self._RESOURCES,
         }
         if min_price is not None and min_price > 0:
@@ -263,14 +264,16 @@ class PAAPIClient(AmazonClient):
 
         # ── Item info ───────────────────────────────────────
         info = item.get("ItemInfo", {})
-        title = info.get("Title", {}).get("DisplayValue", "")
+        title = PAAPIClient._trim_title(
+            info.get("Title", {}).get("DisplayValue", "")
+        )
         brand = (
             info.get("ByLineInfo", {}).get("Brand", {}).get("DisplayValue", "")
         )
         raw_features = (
             info.get("Features", {}).get("DisplayValues", [])
         )
-        features = raw_features[:5]
+        features = [PAAPIClient._trim_feature(f) for f in raw_features[:3]]
 
         # ── Image ───────────────────────────────────────────
         image_url = (
@@ -372,3 +375,50 @@ class PAAPIClient(AmazonClient):
             deal_end_time=deal_end_time,
             is_deal=is_deal,
         )
+
+    # ────────────────────────────────────────────────────────
+    #  Text trimming helpers
+    # ────────────────────────────────────────────────────────
+
+    @staticmethod
+    def _trim_title(title: str, max_len: int = 100) -> str:
+        """Shorten a verbose product title to something clean.
+
+        Strategy: cut at the first comma or Arabic comma (،) that appears
+        after 60 characters, keeping the most important part. Cap at *max_len*.
+        """
+        if len(title) <= max_len:
+            return title
+
+        # Try cutting at a comma after the first meaningful chunk
+        for sep in ("،", ","):
+            idx = title.find(sep, 40)
+            if 0 < idx <= max_len:
+                return title[:idx].strip()
+
+        # No good comma — hard-cut at max_len
+        return title[:max_len].rsplit(" ", 1)[0].strip() + "…"
+
+    @staticmethod
+    def _trim_feature(text: str, max_len: int = 80) -> str:
+        """Keep only the label part of a feature (before the colon detail).
+
+        Amazon features are often "Label: long explanation paragraph".
+        We keep just the label, or the first sentence if no colon.
+        """
+        # If there's a colon, take everything before it as the short label
+        colon_idx = text.find(":")
+        if 0 < colon_idx <= 60:
+            return text[:colon_idx].strip()
+
+        # Otherwise take the first sentence
+        for end in (".", "。", ".."):
+            idx = text.find(end)
+            if 0 < idx <= max_len:
+                return text[: idx].strip()
+
+        # Hard-cut
+        if len(text) <= max_len:
+            return text
+        return text[:max_len].rsplit(" ", 1)[0].strip() + "…"
+
