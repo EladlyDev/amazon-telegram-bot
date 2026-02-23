@@ -1,0 +1,21 @@
+categories:
+  - name: "Electronics"
+    search_index: "Electronics"
+    keywords: ["wireless earbuds deals", "phone accessories sale",
+                "smart watch discount"]
+    min_saving_percent: 20
+    enabled: true
+  - name: "Home & Kitchen"
+    search_index: "HomeAndKitchen"
+    keywords: ["kitchen gadgets deals", "home organization sale",
+                "coffee maker discount"]
+    min_saving_percent: 15
+    enabled: true
+  - name: "Fashion"
+    search_index: "Fashion"
+    keywords: ["men watches deals", "sunglasses sale"]
+    min_saving_percent: 25
+    enabled: false
+
+rotation_strategy: "sequential"
+products_per_fetch: 5

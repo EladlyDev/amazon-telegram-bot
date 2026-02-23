@@ -1,0 +1,37 @@
+amazon:
+  marketplace: "www.amazon.com"
+  region: "us-east-1"
+  host: "webservices.amazon.com"
+
+telegram:
+  channel_id: "@your_channel"
+  rate_limit_seconds: 3
+
+schedule:
+  fixed_times: ["09:00", "12:00", "15:00", "18:00", "21:00"]
+  products_per_run: 3
+  jitter_minutes: 15
+
+filters:
+  min_discount_percent: 15
+  min_price: 10.0
+  max_price: 500.0
+  must_have_image: true
+  prime_only: false
+
+dedup:
+  cooldown_days: 7
+
+admin:
+  chat_id: ""
+  notify_errors: true
+
+dashboard:
+  host: "0.0.0.0"
+  port: 5000
+
+logging:
+  level: "INFO"
+  file: "logs/bot.log"
+  rotation: "10 MB"
+  retention: "30 days"

@@ -1,0 +1,40 @@
+templates:
+  default:
+    format: "html"
+    body: |
+      <b>عرض مميز!</b>
+
+      <b>{title}</b>
+      {brand_line}
+
+      السعر: <s>{original_price}</s>  →  <b>{current_price}</b>
+      خصم: <b>{savings_percent}</b> (وفّر {savings_amount})
+      {prime_line}
+
+      <b>المميزات:</b>
+      {features_formatted}
+
+      <a href="{url}">اطلب الآن من أمازون</a>
+
+      {channel_footer}
+    brand_line: "العلامة التجارية: {brand}"
+    prime_line: "شحن برايم مجاني"
+    features_max: 4
+    features_bullet: "- {feature}"
+    channel_footer: "تابعنا للمزيد من العروض"
+    include_image: true
+
+  minimal:
+    format: "html"
+    body: |
+      <b>{title}</b>
+      <s>{original_price}</s> → <b>{current_price}</b> (-{savings_percent})
+      <a href="{url}">اشتر الآن</a>
+    brand_line: ""
+    prime_line: ""
+    features_max: 0
+    features_bullet: ""
+    channel_footer: ""
+    include_image: true
+
+active_template: "default"
