@@ -1,0 +1,415 @@
+{% extends "base.html" %}
+
+{% block title %}القوالب{% endblock %}
+{% block page_title %}
+<svg class="w-5 h-5 inline-block ml-1 -mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+        d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
+</svg>
+القوالب
+{% endblock %}
+
+{% block content %}
+<div x-data="templatesPage()" x-init="loadTemplates()" class="space-y-6">
+
+    <!-- Header -->
+    <div class="flex items-center justify-between">
+        <div>
+            <h1 class="text-xl font-extrabold text-gray-800 flex items-center gap-2">
+                <svg class="w-6 h-6 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+                        d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
+                </svg>
+                قوالب المنشورات
+            </h1>
+            <p class="text-sm text-gray-500 mt-1">أنشئ وخصص قوالب الرسائل المنشورة على تيليجرام</p>
+        </div>
+        <button @click="openCreateModal()" class="px-5 py-2.5 bg-indigo-500 hover:bg-indigo-600 text-white text-sm font-medium
+                       rounded-xl shadow-sm transition-all flex items-center gap-2 self-start">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.5v15m7.5-7.5h-15" />
+            </svg>
+            قالب جديد
+        </button>
+    </div>
+
+    <!-- Template List -->
+    <div class="space-y-4">
+        <div x-show="loading && templates.length === 0" class="text-center py-12">
+            <div class="spinner mx-auto mb-3" style="width:28px;height:28px;border-width:3px"></div>
+            <p class="text-gray-400 text-sm">جارِ تحميل القوالب...</p>
+        </div>
+
+        <div x-show="!loading && templates.length === 0" style="display:none"
+            class="text-center py-12 bg-white rounded-2xl border border-gray-100 shadow-sm">
+            <svg class="w-12 h-12 text-gray-300 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+                    d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
+            </svg>
+            <p class="text-gray-500 font-medium">لا توجد قوالب بعد</p>
+            <p class="text-gray-400 text-sm mt-1">أنشئ قالبك الأول لبدء النشر</p>
+        </div>
+
+        <template x-for="tmpl in templates" :key="tmpl.id">
+            <div class="bg-white rounded-2xl p-5 shadow-sm border transition-all card-hover"
+                :class="tmpl.is_active ? 'border-r-4 border-r-indigo-500 border-t border-b border-l border-gray-100' : 'border-gray-100'">
+                <div class="flex items-start justify-between gap-4">
+                    <div class="flex-1 min-w-0">
+                        <div class="flex items-center gap-2 flex-wrap mb-1">
+                            <span class="font-bold text-sm text-gray-800" x-text="tmpl.name"></span>
+                            <span
+                                class="text-[10px] px-2 py-0.5 rounded-full font-medium inline-flex items-center gap-1"
+                                :class="tmpl.is_active
+                                    ? 'bg-emerald-100 text-emerald-700'
+                                    : 'bg-gray-100 text-gray-500'">
+                                <span class="w-1.5 h-1.5 rounded-full"
+                                    :class="tmpl.is_active ? 'bg-emerald-500' : 'bg-gray-400'"></span>
+                                <span x-text="tmpl.is_active ? 'مفعّل' : 'غير مفعّل'"></span>
+                            </span>
+                        </div>
+                        <p class="text-xs text-gray-500 mb-2" x-text="tmpl.description || 'بدون وصف'"></p>
+                        <div class="flex gap-3 text-[10px] text-gray-400">
+                            <span class="flex items-center gap-1">
+                                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+                                        d="M17.25 6.75L22.5 12l-5.25 5.25m-10.5 0L1.5 12l5.25-5.25m7.5-3l-4.5 16.5" />
+                                </svg>
+                                <span x-text="tmpl.parse_mode || 'HTML'"></span>
+                            </span>
+                            <span class="flex items-center gap-1">
+                                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+                                        d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909M3.75 21h16.5a1.5 1.5 0 001.5-1.5V6a1.5 1.5 0 00-1.5-1.5H3.75a1.5 1.5 0 00-1.5 1.5v13.5a1.5 1.5 0 001.5 1.5z" />
+                                </svg>
+                                <span x-text="tmpl.include_image ? 'مع صورة' : 'نص فقط'"></span>
+                            </span>
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-1.5 shrink-0">
+                        <button x-show="!tmpl.is_active" @click="activateTemplate(tmpl.id)" class="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700
+                                       text-[10px] font-medium rounded-lg transition-colors">
+                            تفعيل
+                        </button>
+                        <button @click="openEditModal(tmpl)"
+                            class="p-2 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-indigo-600 transition-colors"
+                            title="تعديل">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+                                    d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10" />
+                            </svg>
+                        </button>
+                        <button @click="deleteTemplate(tmpl.id)" :disabled="tmpl.is_active" class="p-2 rounded-lg hover:bg-red-50 text-gray-400 hover:text-red-500
+                                       transition-colors disabled:opacity-30 disabled:cursor-not-allowed" title="حذف">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+                                    d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </template>
+    </div>
+
+    <!-- Modal -->
+    <div x-show="showModal" x-transition:enter="transition ease-out duration-200" x-transition:enter-start="opacity-0"
+        x-transition:enter-end="opacity-100" x-transition:leave="transition ease-in duration-150"
+        x-transition:leave-start="opacity-100" x-transition:leave-end="opacity-0"
+        @keydown.escape.window="showModal = false"
+        class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" style="display:none">
+
+        <div @click.outside="showModal = false" x-transition:enter="transition ease-out duration-200"
+            x-transition:enter-start="opacity-0 scale-95" x-transition:enter-end="opacity-100 scale-100"
+            class="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col">
+
+            <!-- Modal header with tabs -->
+            <div class="px-6 py-4 border-b border-gray-100 flex items-center justify-between shrink-0">
+                <div class="flex items-center gap-4">
+                    <h3 class="text-lg font-bold text-gray-800"
+                        x-text="editingTemplate ? ('تعديل قالب: ' + form.name) : 'إضافة قالب'"></h3>
+                    <div class="flex bg-gray-100 rounded-lg p-0.5">
+                        <button @click="activeTab = 'edit'"
+                            class="px-3 py-1.5 text-xs font-medium rounded-md transition-colors flex items-center gap-1.5"
+                            :class="activeTab === 'edit' ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-500 hover:text-gray-700'">
+                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+                                    d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931z" />
+                            </svg>
+                            تحرير
+                        </button>
+                        <button @click="activeTab = 'preview'; loadPreview()"
+                            class="px-3 py-1.5 text-xs font-medium rounded-md transition-colors flex items-center gap-1.5"
+                            :class="activeTab === 'preview' ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-500 hover:text-gray-700'">
+                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+                                    d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" />
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+                                    d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                            </svg>
+                            معاينة
+                        </button>
+                    </div>
+                </div>
+                <button @click="showModal = false"
+                    class="p-2 rounded-lg hover:bg-gray-100 text-gray-400 transition-colors">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                </button>
+            </div>
+
+            <!-- Modal body -->
+            <div class="flex-1 overflow-y-auto p-6">
+
+                <!-- Edit Tab -->
+                <div x-show="activeTab === 'edit'" class="space-y-4">
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-xs font-medium text-gray-600 mb-1.5">اسم القالب</label>
+                            <input type="text" x-model="form.name" placeholder="القالب الأساسي"
+                                class="w-full px-3 py-2.5 text-sm bg-gray-50 border border-gray-200 rounded-xl
+                                          focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 focus:bg-white transition-all outline-none">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-gray-600 mb-1.5">وصف القالب</label>
+                            <input type="text" x-model="form.description" placeholder="وصف مختصر للقالب"
+                                class="w-full px-3 py-2.5 text-sm bg-gray-50 border border-gray-200 rounded-xl
+                                          focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 focus:bg-white transition-all outline-none">
+                        </div>
+                    </div>
+
+                    <div>
+                        <label class="block text-xs font-medium text-gray-600 mb-1.5">محتوى القالب</label>
+                        <textarea x-ref="bodyTextarea" x-model="form.body" dir="auto" rows="12"
+                            placeholder="🏷️ <b>{title}</b>&#10;&#10;💰 السعر: <s>{original_price}</s> ← <b>{current_price} {currency}</b>&#10;📉 خصم: {savings_percent}%&#10;&#10;🛒 <a href='{url}'>اشترِ الآن</a>"
+                            class="w-full px-4 py-3 text-sm bg-gray-50 border border-gray-200 rounded-xl
+                                         focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 focus:bg-white
+                                         transition-all outline-none font-mono resize-y"
+                            style="min-height:250px"></textarea>
+
+                        <!-- Variables under textarea -->
+                        <div class="mt-2 p-3 bg-gray-50 rounded-xl border border-gray-200">
+                            <div class="flex items-center gap-2 mb-2">
+                                <svg class="w-3.5 h-3.5 text-gray-500" fill="none" stroke="currentColor"
+                                    viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+                                        d="M17.25 6.75L22.5 12l-5.25 5.25m-10.5 0L1.5 12l5.25-5.25m7.5-3l-4.5 16.5" />
+                                </svg>
+                                <span class="text-[10px] font-medium text-gray-500">المتغيرات المتاحة — اضغط
+                                    للإدراج</span>
+                            </div>
+                            <div class="flex flex-wrap gap-1.5">
+                                <template x-for="v in variables" :key="v.key">
+                                    <button @click="insertVariable(v.key)" class="text-[10px] font-mono bg-white hover:bg-indigo-50 hover:text-indigo-600
+                                                   px-2 py-1 rounded-lg text-gray-600 transition-colors cursor-pointer
+                                                   border border-gray-200 hover:border-indigo-300" :title="v.label"
+                                        x-text="v.key"></button>
+                                </template>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="flex flex-wrap items-center gap-6">
+                        <div>
+                            <label class="block text-xs font-medium text-gray-600 mb-1.5">نوع التنسيق</label>
+                            <div class="flex gap-2">
+                                <button @click="form.parse_mode = 'HTML'"
+                                    class="px-4 py-2 text-xs font-medium rounded-xl border-2 transition-all"
+                                    :class="form.parse_mode === 'HTML' ? 'border-indigo-500 bg-indigo-50 text-indigo-700' : 'border-gray-200 text-gray-600'">HTML</button>
+                                <button @click="form.parse_mode = 'MarkdownV2'"
+                                    class="px-4 py-2 text-xs font-medium rounded-xl border-2 transition-all"
+                                    :class="form.parse_mode === 'MarkdownV2' ? 'border-indigo-500 bg-indigo-50 text-indigo-700' : 'border-gray-200 text-gray-600'">MarkdownV2</button>
+                            </div>
+                        </div>
+                        <label class="flex items-center gap-3 cursor-pointer pt-4">
+                            <button type="button" @click="form.include_image = !form.include_image"
+                                class="w-10 h-6 rounded-full relative transition-colors duration-200"
+                                :class="form.include_image ? 'bg-emerald-500' : 'bg-gray-300'">
+                                <span
+                                    class="absolute top-0.5 w-5 h-5 bg-white rounded-full shadow-sm transition-all duration-200"
+                                    :class="form.include_image ? 'left-0.5' : 'left-[18px]'"></span>
+                            </button>
+                            <span class="text-xs text-gray-600 flex items-center gap-1">
+                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+                                        d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909M3.75 21h16.5a1.5 1.5 0 001.5-1.5V6a1.5 1.5 0 00-1.5-1.5H3.75a1.5 1.5 0 00-1.5 1.5v13.5a1.5 1.5 0 001.5 1.5z" />
+                                </svg>
+                                إرفاق صورة المنتج
+                            </span>
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Preview Tab -->
+                <div x-show="activeTab === 'preview'">
+                    <div x-show="previewLoading" class="text-center py-12">
+                        <div class="spinner mx-auto mb-3" style="width:28px;height:28px;border-width:3px"></div>
+                        <p class="text-gray-400 text-sm">جارِ تحميل المعاينة...</p>
+                    </div>
+                    <div x-show="!previewLoading" class="flex justify-center">
+                        <div class="w-full max-w-md">
+                            <div class="bg-[#effdde] rounded-2xl rounded-br-sm shadow-md p-4 relative">
+                                <div x-show="form.include_image"
+                                    class="w-full h-48 bg-gray-200 rounded-xl mb-3 flex items-center justify-center text-gray-400">
+                                    <svg class="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+                                            d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909M3.75 21h16.5a1.5 1.5 0 001.5-1.5V6a1.5 1.5 0 00-1.5-1.5H3.75a1.5 1.5 0 00-1.5 1.5v13.5a1.5 1.5 0 001.5 1.5z" />
+                                    </svg>
+                                </div>
+                                <div class="text-sm leading-relaxed text-gray-800 whitespace-pre-wrap" dir="auto"
+                                    x-html="preview || '<span class=text-gray-400>اكتب القالب ثم اضغط معاينة</span>'">
+                                </div>
+                                <div class="text-left text-[10px] text-gray-400 mt-2">12:30 ✓✓</div>
+                            </div>
+                            <button @click="loadPreview()" class="mt-4 px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-600 text-xs
+                                           font-medium rounded-xl transition-colors mx-auto flex items-center gap-1.5">
+                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+                                        d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182" />
+                                </svg>
+                                تحديث المعاينة
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Modal footer -->
+            <div class="px-6 py-4 border-t border-gray-100 flex items-center justify-end gap-3 shrink-0">
+                <button @click="showModal = false"
+                    class="px-5 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-medium rounded-xl transition-colors">إلغاء</button>
+                <button @click="saveTemplate()" :disabled="saving"
+                    class="px-6 py-2.5 bg-indigo-500 hover:bg-indigo-600 text-white text-sm
+                               font-medium rounded-xl shadow-sm transition-all disabled:opacity-50 flex items-center gap-2">
+                    <span x-show="saving" class="spinner" style="width:14px;height:14px;border-width:2px"></span>
+                    <span x-text="saving ? 'جارِ الحفظ...' : 'حفظ'"></span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    function templatesPage() {
+        return {
+            templates: [],
+            showModal: false,
+            editingTemplate: null,
+            loading: false,
+            saving: false,
+            preview: '',
+            previewLoading: false,
+            activeTab: 'edit',
+            form: { name: '', description: '', body: '', parse_mode: 'HTML', include_image: true },
+            variables: [
+                { key: '{title}', label: 'اسم المنتج' },
+                { key: '{brand}', label: 'العلامة التجارية' },
+                { key: '{original_price}', label: 'السعر الأصلي' },
+                { key: '{current_price}', label: 'السعر الحالي' },
+                { key: '{currency}', label: 'العملة' },
+                { key: '{savings_percent}', label: 'نسبة التوفير' },
+                { key: '{savings_amount}', label: 'مبلغ التوفير' },
+                { key: '{features}', label: 'المميزات' },
+                { key: '{url}', label: 'رابط المنتج' },
+                { key: '{prime_badge}', label: 'شارة برايم' },
+                { key: '{category}', label: 'الفئة' },
+                { key: '{asin}', label: 'رقم ASIN' },
+                { key: '{rating}', label: 'التقييم' },
+                { key: '{reviews_count}', label: 'عدد التقييمات' },
+            ],
+
+            async loadTemplates() {
+                this.loading = true;
+                try { this.templates = await apiCall('/api/templates') || []; } catch (e) { }
+                this.loading = false;
+            },
+
+            openCreateModal() {
+                this.editingTemplate = null;
+                this.form = { name: '', description: '', body: '', parse_mode: 'HTML', include_image: true };
+                this.preview = '';
+                this.activeTab = 'edit';
+                this.showModal = true;
+            },
+
+            openEditModal(tmpl) {
+                this.editingTemplate = tmpl;
+                this.form = {
+                    name: tmpl.name || '', description: tmpl.description || '', body: tmpl.body || '',
+                    parse_mode: tmpl.parse_mode || 'HTML', include_image: tmpl.include_image ?? true,
+                };
+                this.preview = '';
+                this.activeTab = 'edit';
+                this.showModal = true;
+            },
+
+            async saveTemplate() {
+                if (!this.form.name) { showToast('يرجى إدخال اسم القالب', 'error'); return; }
+                this.saving = true;
+                try {
+                    if (this.editingTemplate) {
+                        await apiCall('/api/templates/' + this.editingTemplate.id, 'PUT', this.form);
+                        showToast('تم تحديث القالب بنجاح', 'success');
+                    } else {
+                        await apiCall('/api/templates', 'POST', this.form);
+                        showToast('تم إضافة القالب بنجاح', 'success');
+                    }
+                    this.showModal = false;
+                    await this.loadTemplates();
+                } catch (e) { }
+                this.saving = false;
+            },
+
+            async deleteTemplate(id) {
+                const ok = await confirmAction('هل أنت متأكد من حذف هذا القالب؟');
+                if (!ok) return;
+                try { await apiCall('/api/templates/' + id, 'DELETE'); showToast('تم حذف القالب', 'success'); await this.loadTemplates(); } catch (e) { }
+            },
+
+            async activateTemplate(id) {
+                try { await apiCall('/api/templates/' + id + '/activate', 'POST'); showToast('تم تفعيل القالب', 'success'); await this.loadTemplates(); } catch (e) { }
+            },
+
+            async loadPreview() {
+                if (!this.form.body) {
+                    this.preview = '<span class="text-gray-400">القالب فارغ — اكتب محتوى أولاً</span>';
+                    return;
+                }
+                this.previewLoading = true;
+                try {
+                    const res = await apiCall('/api/templates/preview', 'POST', {
+                        body: this.form.body, parse_mode: this.form.parse_mode,
+                    });
+                    let html = res.rendered || res.preview || this.form.body;
+                    // Convert literal \n to <br> for preview display
+                    html = html.replace(/\\n/g, '\n').replace(/\n/g, '<br>');
+                    this.preview = html;
+                } catch (e) {
+                    this.preview = this.form.body.replace(/\n/g, '<br>');
+                }
+                this.previewLoading = false;
+            },
+
+            insertVariable(varKey) {
+                const ta = this.$refs.bodyTextarea;
+                if (!ta) return;
+                const start = ta.selectionStart;
+                const end = ta.selectionEnd;
+                const before = this.form.body.substring(0, start);
+                const after = this.form.body.substring(end);
+                this.form.body = before + varKey + after;
+                // Move cursor to after the inserted variable
+                this.$nextTick(() => {
+                    const newPos = start + varKey.length;
+                    ta.focus();
+                    ta.setSelectionRange(newPos, newPos);
+                });
+            }
+        };
+    }
+</script>
+{% endblock %}

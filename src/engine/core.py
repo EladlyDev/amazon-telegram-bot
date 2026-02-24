@@ -193,6 +193,12 @@ class BotEngine:
             )
             await self.rotator.advance()
             await self._repo.update_keyword_usage(keyword.id, products_found=0)
+            await self._repo.log_event(
+                level="WARNING",
+                component="engine",
+                action="no_results",
+                message=f"No products found for '{keyword.keyword}' in [{category.name}].",
+            )
             return False
 
         # ── 3. FILTER ───────────────────────────────────────
@@ -211,6 +217,12 @@ class BotEngine:
             await self._repo.update_keyword_usage(
                 keyword.id, products_found=len(products)
             )
+            await self._repo.log_event(
+                level="WARNING",
+                component="engine",
+                action="all_filtered",
+                message=f"All {len(products)} products filtered out for '{keyword.keyword}'.",
+            )
             return False
 
         # ── 4. DEDUPLICATE ──────────────────────────────────
@@ -221,12 +233,26 @@ class BotEngine:
                 len(filtered), keyword.keyword,
             )
             await self.rotator.advance()
+            await self._repo.log_event(
+                level="WARNING",
+                component="engine",
+                action="all_duplicates",
+                message=f"All {len(filtered)} products already published for '{keyword.keyword}'.",
+            )
             return False
 
         # ── 5. SELECT BEST (highest discount) ───────────────
         best = sorted(unique, key=lambda p: p.savings_percent, reverse=True)[0]
         best.category = category.name_ar or category.name
         best.keyword_used = keyword.keyword
+
+        # ── 5b. VARIANT ENRICHMENT (only for the selected product) ──
+        from src.amazon.pa_api import PAAPIClient
+        if isinstance(self._amazon, PAAPIClient):
+            try:
+                best = await self._amazon._get_cheapest_variant(best)
+            except Exception as exc:
+                logger.debug("Variant lookup failed for %s: %s", best.asin, exc)
 
         logger.info(
             "Selected: %s — %s (%.0f%% off)",

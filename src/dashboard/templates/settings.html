@@ -1,0 +1,254 @@
+{% extends "base.html" %}
+
+{% block title %}الإعدادات{% endblock %}
+{% block page_title %}
+<svg class="w-5 h-5 inline-block ml-1 -mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+        d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.324.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 011.37.49l1.296 2.247a1.125 1.125 0 01-.26 1.431l-1.003.827c-.293.24-.438.613-.431.992a6.759 6.759 0 010 .255c-.007.378.138.75.43.99l1.005.828c.424.35.534.954.26 1.43l-1.298 2.247a1.125 1.125 0 01-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.57 6.57 0 01-.22.128c-.331.183-.581.495-.644.869l-.213 1.28c-.09.543-.56.941-1.11.941h-2.594c-.55 0-1.02-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 01-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 01-1.369-.49l-1.297-2.247a1.125 1.125 0 01.26-1.431l1.004-.827c.292-.24.437-.613.43-.992a6.932 6.932 0 010-.255c.007-.378-.138-.75-.43-.99l-1.004-.828a1.125 1.125 0 01-.26-1.43l1.297-2.247a1.125 1.125 0 011.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.087.22-.128.332-.183.582-.495.644-.869l.214-1.281z" />
+    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+</svg>
+الإعدادات
+{% endblock %}
+
+{% block content %}
+<div x-data="settingsPage()" x-init="loadSettings()" class="space-y-6 max-w-4xl">
+
+    <!-- Loading -->
+    <div x-show="loading" class="text-center py-16">
+        <div class="spinner mx-auto mb-4" style="width:32px;height:32px;border-width:3px"></div>
+        <p class="text-gray-400 text-sm">جارِ تحميل الإعدادات...</p>
+    </div>
+
+    <template x-if="!loading && loaded">
+        <div class="space-y-5">
+
+            <!-- Sections template macro via array -->
+            <template x-for="section in sections" :key="section.key">
+                <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden"
+                    x-data="{ open: true }">
+                    <button @click="open = !open"
+                        class="w-full px-6 py-4 flex items-center justify-between hover:bg-gray-50/50 transition-colors">
+                        <div class="flex items-center gap-3">
+                            <div class="w-9 h-9 rounded-xl flex items-center justify-center" :class="section.iconBg">
+                                <svg class="w-4.5 h-4.5" :class="section.iconColor" fill="none" stroke="currentColor"
+                                    viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+                                        :d="section.iconPath" />
+                                </svg>
+                            </div>
+                            <h3 class="font-bold text-sm text-gray-800" x-text="section.title"></h3>
+                            <span class="text-[10px] bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full"
+                                x-text="(groups[section.key] || []).length + ' إعداد'"></span>
+                        </div>
+                        <svg class="w-4 h-4 text-gray-400 transition-transform duration-200"
+                            :class="open && 'rotate-180'" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                        </svg>
+                    </button>
+                    <div x-show="open" x-collapse class="px-6 pb-6 space-y-5 border-t border-gray-50 pt-5">
+                        <template x-for="s in (groups[section.key] || [])" :key="s.key">
+                            <div class="flex flex-col sm:flex-row sm:items-start gap-2 sm:gap-6">
+                                <div class="sm:w-1/3 shrink-0">
+                                    <label class="text-xs font-medium text-gray-700" x-text="getLabel(s.key)"></label>
+                                    <p class="text-[10px] text-gray-400 mt-0.5" x-text="s.description || ''"></p>
+                                </div>
+                                <div class="flex-1">
+                                    <!-- Read-only bool -->
+                                    <template x-if="isReadOnly(s.key) && s.value_type === 'bool'">
+                                        <span class="text-sm inline-flex items-center gap-1.5"
+                                            :class="values[s.key] ? 'text-emerald-600' : 'text-red-500'">
+                                            <span class="w-2 h-2 rounded-full"
+                                                :class="values[s.key] ? 'bg-emerald-500' : 'bg-red-500'"></span>
+                                            <span x-text="values[s.key] ? 'يعمل' : 'متوقف'"></span>
+                                        </span>
+                                    </template>
+                                    <!-- Read-only non-bool -->
+                                    <template x-if="isReadOnly(s.key) && s.value_type !== 'bool'">
+                                        <span class="text-sm text-gray-600" x-text="values[s.key] || '—'"></span>
+                                    </template>
+                                    <!-- Editable bool toggle -->
+                                    <template x-if="!isReadOnly(s.key) && s.value_type === 'bool'">
+                                        <button type="button" @click="values[s.key] = !values[s.key]"
+                                            class="w-10 h-6 rounded-full relative transition-colors duration-200"
+                                            :class="values[s.key] ? 'bg-emerald-500' : 'bg-gray-300'">
+                                            <span
+                                                class="absolute top-0.5 w-5 h-5 bg-white rounded-full shadow-sm transition-all duration-200"
+                                                :class="values[s.key] ? 'left-0.5' : 'left-[18px]'"></span>
+                                        </button>
+                                    </template>
+                                    <!-- Editable string -->
+                                    <template x-if="!isReadOnly(s.key) && s.value_type === 'string'">
+                                        <input type="text" x-model="values[s.key]" dir="auto"
+                                            class="w-full px-3 py-2 text-sm bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 focus:bg-white outline-none transition-all">
+                                    </template>
+                                    <!-- Editable int -->
+                                    <template x-if="!isReadOnly(s.key) && s.value_type === 'int'">
+                                        <input type="number" x-model.number="values[s.key]" step="1"
+                                            class="w-full px-3 py-2 text-sm bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 focus:bg-white outline-none transition-all">
+                                    </template>
+                                    <!-- Editable float -->
+                                    <template x-if="!isReadOnly(s.key) && s.value_type === 'float'">
+                                        <input type="number" x-model.number="values[s.key]" step="0.5" min="0.5"
+                                            class="w-full px-3 py-2 text-sm bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 focus:bg-white outline-none transition-all">
+                                    </template>
+                                </div>
+                            </div>
+                        </template>
+                    </div>
+                </div>
+            </template>
+
+        </div>
+    </template>
+
+    <!-- E) Save Bar -->
+    <div x-show="hasChanges()" x-transition:enter="transition ease-out duration-200"
+        x-transition:enter-start="opacity-0 translate-y-4" x-transition:enter-end="opacity-100 translate-y-0"
+        class="sticky bottom-6 bg-white rounded-2xl p-4 shadow-lg border border-gray-200 flex items-center justify-between flex-wrap gap-3"
+        style="display:none">
+        <div class="text-sm text-gray-600 flex items-center gap-2">
+            <svg class="w-4 h-4 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+                    d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
+            </svg>
+            <span class="text-indigo-600 font-bold" x-text="getChangedCount()"></span>
+            إعداد(ات) تم تعديلها
+        </div>
+        <div class="flex gap-2">
+            <button @click="resetSettings()"
+                class="px-5 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-medium rounded-xl transition-colors flex items-center gap-1.5">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+                        d="M9 15L3 9m0 0l6-6M3 9h12a6 6 0 010 12h-3" />
+                </svg>
+                إلغاء التغييرات
+            </button>
+            <button @click="saveSettings()" :disabled="saving"
+                class="px-6 py-2.5 bg-indigo-500 hover:bg-indigo-600 text-white text-sm font-bold rounded-xl shadow-sm transition-all disabled:opacity-50 flex items-center gap-2">
+                <span x-show="saving" class="spinner" style="width:14px;height:14px;border-width:2px"></span>
+                <span x-show="!saving">
+                    <svg class="w-4 h-4 inline -mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+                            d="M17.593 3.322c1.1.128 1.907 1.077 1.907 2.185V21L12 17.25 4.5 21V5.507c0-1.108.806-2.057 1.907-2.185a48.507 48.507 0 0111.186 0z" />
+                    </svg>
+                </span>
+                <span x-text="saving ? 'جارِ الحفظ...' : 'حفظ التغييرات'"></span>
+            </button>
+        </div>
+    </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    function settingsPage() {
+        return {
+            groups: {},
+            values: {},
+            originalValues: {},
+            allSettings: [],
+            loading: false,
+            loaded: false,
+            saving: false,
+
+            sections: [
+                {
+                    key: 'amazon', title: 'أمازون', iconBg: 'bg-orange-50', iconColor: 'text-orange-500',
+                    iconPath: 'M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z'
+                },
+                {
+                    key: 'telegram', title: 'تلقرام', iconBg: 'bg-sky-50', iconColor: 'text-sky-500',
+                    iconPath: 'M8.625 12a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H8.25m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H12m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0h-.375M21 12c0 4.556-4.03 8.25-9 8.25a9.764 9.764 0 01-2.555-.337A5.972 5.972 0 015.41 20.97a5.969 5.969 0 01-.474-.065 4.48 4.48 0 00.978-2.025c.09-.457-.133-.901-.467-1.226C3.93 16.178 3 14.189 3 12c0-4.556 4.03-8.25 9-8.25s9 3.694 9 8.25z'
+                },
+                {
+                    key: 'publishing', title: 'النشر', iconBg: 'bg-indigo-50', iconColor: 'text-indigo-500',
+                    iconPath: 'M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5'
+                },
+                {
+                    key: 'bot', title: 'البوت', iconBg: 'bg-violet-50', iconColor: 'text-violet-500',
+                    iconPath: 'M9.75 3.104v5.714a2.25 2.25 0 01-.659 1.591L5 14.5M9.75 3.104c-.251.023-.501.05-.75.082m.75-.082a24.301 24.301 0 014.5 0m0 0v5.714c0 .597.237 1.17.659 1.591L19.8 15.3M14.25 3.104c.251.023.501.05.75.082M19.8 15.3l-1.57.393A9.065 9.065 0 0112 15a9.065 9.065 0 00-6.23.693L5 14.5m14.8.8l1.402 1.402c1.232 1.232.65 3.318-1.067 3.611A48.309 48.309 0 0112 21c-2.773 0-5.491-.235-8.135-.687-1.718-.293-2.3-2.379-1.067-3.61L5 14.5'
+                },
+            ],
+
+            labels: {
+                'amazon.marketplace': 'متجر أمازون',
+                'amazon.partner_tag': 'Partner Tag',
+                'amazon.data_source': 'مصدر البيانات',
+                'amazon.request_delay_seconds': 'التأخير بين الطلبات (ثانية)',
+                'amazon.access_key': 'Access Key',
+                'amazon.secret_key': 'Secret Key',
+                'telegram.channel_id': 'معرّف القناة',
+                'telegram.admin_chat_id': 'معرّف المسؤول',
+                'telegram.send_errors_to_admin': 'إرسال تنبيهات الأخطاء',
+                'telegram.bot_token': 'Bot Token',
+                'publishing.duplicate_cooldown_days': 'فترة منع التكرار (يوم)',
+                'publishing.max_retries': 'محاولات إعادة النشر',
+                'publishing.retry_delay_seconds': 'التأخير بين المحاولات (ثانية)',
+                'bot.is_running': 'حالة البوت',
+                'bot.total_published': 'إجمالي المنشورات',
+                'bot.last_publish_at': 'آخر نشر',
+            },
+
+            readOnlyKeys: ['amazon.marketplace', 'bot.is_running', 'bot.total_published', 'bot.last_publish_at'],
+
+            getLabel(key) { return this.labels[key] || key.split('.').pop(); },
+            isReadOnly(key) { return this.readOnlyKeys.includes(key); },
+
+            async loadSettings() {
+                this.loading = true;
+                try {
+                    const data = await apiCall('/api/settings');
+                    this.groups = data || {};
+                    this.values = {};
+                    this.allSettings = [];
+                    for (const [group, settings] of Object.entries(data || {})) {
+                        for (const s of settings) {
+                            let val = s.value;
+                            if (s.value_type === 'bool') val = val === 'true' || val === true;
+                            else if (s.value_type === 'int') val = parseInt(val) || 0;
+                            else if (s.value_type === 'float') val = parseFloat(val) || 0;
+                            this.values[s.key] = val;
+                            this.allSettings.push(s);
+                        }
+                    }
+                    this.originalValues = JSON.parse(JSON.stringify(this.values));
+                    this.loaded = true;
+                } catch (e) { }
+                this.loading = false;
+            },
+
+            hasChanges() { return this.getChangedCount() > 0; },
+
+            getChangedCount() {
+                let count = 0;
+                for (const key of Object.keys(this.values)) {
+                    if (this.isReadOnly(key)) continue;
+                    if (String(this.values[key]) !== String(this.originalValues[key])) count++;
+                }
+                return count;
+            },
+
+            async saveSettings() {
+                this.saving = true;
+                try {
+                    const changed = {};
+                    for (const key of Object.keys(this.values)) {
+                        if (this.isReadOnly(key)) continue;
+                        if (String(this.values[key]) !== String(this.originalValues[key])) changed[key] = this.values[key];
+                    }
+                    await apiCall('/api/settings', 'PUT', changed);
+                    this.originalValues = JSON.parse(JSON.stringify(this.values));
+                    showToast('تم حفظ الإعدادات بنجاح', 'success');
+                } catch (e) { }
+                this.saving = false;
+            },
+
+            resetSettings() {
+                this.values = JSON.parse(JSON.stringify(this.originalValues));
+                showToast('تم إلغاء التغييرات', 'info');
+            }
+        };
+    }
+</script>
+{% endblock %}

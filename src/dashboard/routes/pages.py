@@ -92,11 +92,42 @@ async def dashboard_home(
     user: dict = Depends(get_current_user),
 ):
     """Main dashboard overview page."""
+    import json as _json
+    from datetime import datetime as _dt, timedelta as _td
+
     repo = request.app.state.repo
     scheduler = request.app.state.scheduler
 
     stats = await repo.get_dashboard_stats()
-    next_run = scheduler.get_next_run_time()
+
+    # Always compute next_run from DB schedule (APScheduler cache gets stale)
+    next_run = None
+    schedule_active = False
+    schedule = await repo.get_active_schedule()
+    if schedule and schedule.is_active:
+        schedule_active = True
+        import pytz as _pytz
+        tz = _pytz.timezone(schedule.timezone or "Asia/Riyadh")
+        now = _dt.now(tz)
+
+        if schedule.schedule_type == "fixed_times":
+            try:
+                times = _json.loads(schedule.fixed_times or "[]")
+                for t in sorted(times):
+                    h, m = map(int, t.split(":"))
+                    candidate = now.replace(hour=h, minute=m, second=0, microsecond=0)
+                    if candidate > now:
+                        next_run = t
+                        break
+                if not next_run and times:
+                    next_run = sorted(times)[0] + " (غداً)"
+            except Exception:
+                pass
+        elif schedule.schedule_type == "interval":
+            mins = schedule.interval_minutes or 180
+            next_time = now + _td(minutes=mins)
+            next_run = next_time.strftime("%H:%M")
+
     recent_logs = await repo.get_logs(limit=10)
     daily_stats = await repo.get_daily_stats(days=7)
 
@@ -108,6 +139,7 @@ async def dashboard_home(
             "user": user,
             "stats": stats,
             "next_run": next_run,
+            "schedule_active": schedule_active or scheduler.is_running,
             "recent_logs": recent_logs,
             "daily_stats": daily_stats,
         },

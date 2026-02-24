@@ -38,16 +38,20 @@ class CategoryRotator:
     # ────────────────────────────────────────────────────────
 
     async def _ensure_loaded(self) -> None:
-        """Lazy-load active categories on first access."""
-        if not self._initialized:
-            await self.reload()
+        """Reload active categories from DB every cycle to pick up changes."""
+        await self.reload()
 
     async def reload(self) -> None:
         """(Re)load active categories from the database."""
+        old_index = self._current_cat_index
         self._categories = await self._repo.get_active_categories()
-        self._current_cat_index = 0
+        # Preserve position if possible, clamp to valid range
+        if self._categories:
+            self._current_cat_index = old_index % len(self._categories)
+        else:
+            self._current_cat_index = 0
         self._initialized = True
-        logger.info(
+        logger.debug(
             "Rotator loaded %d active categories.", len(self._categories)
         )
 

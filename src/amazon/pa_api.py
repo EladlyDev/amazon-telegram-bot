@@ -58,6 +58,8 @@ class PAAPIClient(AmazonClient):
         "OffersV2.Listings.Condition",
         "OffersV2.Listings.DealDetails",
         "Offers.Listings.DeliveryInfo.IsPrimeEligible",
+        "CustomerReviews.StarRating",
+        "CustomerReviews.Count",
     ]
 
     def __init__(
@@ -121,8 +123,6 @@ class PAAPIClient(AmazonClient):
             return []
 
         products = self._parse_response(data, keywords)
-        if products:
-            products = await self._enrich_cheapest_variants(products)
         return products
 
     async def close(self) -> None:
@@ -229,14 +229,10 @@ class PAAPIClient(AmazonClient):
         if img:
             product.image_url = img
 
-        # Update title if available
-        title_val = (
-            best_item.get("ItemInfo", {})
-            .get("Title", {})
-            .get("DisplayValue", "")
-        )
-        if title_val:
-            product.title = PAAPIClient._trim_title(title_val)
+        # NOTE: We intentionally do NOT update the title here.
+        # Variant titles from GetVariations are often dimension labels
+        # (e.g. "9 مقاسات") rather than actual product names.
+        # The original title from SearchItems is always correct.
 
         # Recalculate savings against original price
         if product.original_price > product.current_price > 0:
@@ -420,6 +416,12 @@ class PAAPIClient(AmazonClient):
         )
         features = [PAAPIClient._trim_feature(f) for f in raw_features[:3]]
 
+        logger.debug(
+            "Item %s: title=%s, brand=%s, features=%d, keys=%s",
+            asin, title[:40], repr(brand), len(raw_features),
+            list(info.keys()),
+        )
+
         # ── Image ───────────────────────────────────────────
         image_url = (
             item.get("Images", {})
@@ -502,6 +504,17 @@ class PAAPIClient(AmazonClient):
                 deal_badge = deal.get("Badge", "")
                 deal_end_time = deal.get("EndTime", "")
 
+        # ── Customer reviews ─────────────────────────────────
+        reviews = item.get("CustomerReviews", {})
+        rating = 0.0
+        reviews_count = 0
+        star_rating = reviews.get("StarRating", {})
+        if star_rating:
+            rating = float(star_rating.get("Value", 0.0))
+        count_obj = reviews.get("Count", None)
+        if count_obj is not None:
+            reviews_count = int(count_obj)
+
         return Product(
             asin=asin,
             title=title,
@@ -515,6 +528,8 @@ class PAAPIClient(AmazonClient):
             image_url=image_url,
             affiliate_url=detail_url,
             is_prime=is_prime,
+            rating=rating,
+            reviews_count=reviews_count,
             keyword_used=keyword,
             deal_badge=deal_badge,
             deal_end_time=deal_end_time,
@@ -545,25 +560,28 @@ class PAAPIClient(AmazonClient):
         return title[:max_len].rsplit(" ", 1)[0].strip() + "…"
 
     @staticmethod
-    def _trim_feature(text: str, max_len: int = 80) -> str:
-        """Keep only the label part of a feature (before the colon detail).
+    def _trim_feature(text: str, max_len: int = 50) -> str:
+        """Extract the most informative part of an Amazon feature bullet.
 
-        Amazon features are often "Label: long explanation paragraph".
-        We keep just the label, or the first sentence if no colon.
+        Amazon features are often "Generic Label: actual useful description".
+        We keep the description part (after the colon) if it's long enough
+        to be meaningful, otherwise keep the full text truncated.
         """
-        # If there's a colon, take everything before it as the short label
+        # If there's a colon, take the content AFTER it (the useful part)
         colon_idx = text.find(":")
-        if 0 < colon_idx <= 60:
-            return text[:colon_idx].strip()
+        if 0 < colon_idx <= 40:
+            after = text[colon_idx + 1:].strip()
+            if len(after) > 10:  # only use if the description is meaningful
+                text = after
 
-        # Otherwise take the first sentence
-        for end in (".", "。", ".."):
+        # Take the first sentence if short enough
+        for end in (".", "。"):
             idx = text.find(end)
             if 0 < idx <= max_len:
-                return text[: idx].strip()
+                return text[:idx].strip()
 
-        # Hard-cut
+        # Hard-cut at max_len
         if len(text) <= max_len:
-            return text
+            return text.strip()
         return text[:max_len].rsplit(" ", 1)[0].strip() + "…"
 

@@ -153,14 +153,22 @@ class PublishScheduler:
 
         Returns ``None`` if no jobs are scheduled.
         """
-        jobs = [
-            j for j in self.scheduler.get_jobs()
-            if j.id.startswith(self.JOB_ID_PREFIX)
-        ]
+        try:
+            jobs = [
+                j for j in self.scheduler.get_jobs()
+                if j.id.startswith(self.JOB_ID_PREFIX)
+            ]
+        except Exception:
+            return None
+
         if not jobs:
             return None
 
-        next_times = [j.next_run_time for j in jobs if j.next_run_time]
+        next_times = [
+            getattr(j, "next_run_time", None)
+            for j in jobs
+        ]
+        next_times = [t for t in next_times if t is not None]
         if not next_times:
             return None
 
@@ -174,14 +182,20 @@ class PublishScheduler:
             List of ``{"id": str, "next_run": str, "trigger": str}``.
         """
         result: list[dict] = []
-        for job in self.scheduler.get_jobs():
+        try:
+            jobs = self.scheduler.get_jobs()
+        except Exception:
+            return result
+
+        for job in jobs:
             if not job.id.startswith(self.JOB_ID_PREFIX):
                 continue
+            nrt = getattr(job, "next_run_time", None)
             result.append({
                 "id": job.id,
                 "next_run": (
-                    job.next_run_time.strftime("%Y-%m-%d %H:%M:%S")
-                    if job.next_run_time
+                    nrt.strftime("%Y-%m-%d %H:%M:%S")
+                    if nrt
                     else "—"
                 ),
                 "trigger": str(job.trigger),

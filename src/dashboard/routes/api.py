@@ -276,6 +276,10 @@ async def update_schedule(
     if isinstance(body.get("fixed_times"), list):
         body["fixed_times"] = json.dumps(body["fixed_times"])
 
+    # Strip non-updatable fields to avoid passing strings to DateTime columns
+    for key in ("id", "created_at", "updated_at", "keywords"):
+        body.pop(key, None)
+
     schedule = await repo.update_schedule(body)
     await scheduler.reload_schedule()
 
