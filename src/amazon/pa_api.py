@@ -32,6 +32,19 @@ class PAAPIClient(AmazonClient):
     SEARCH_TARGET = (
         "com.amazon.paapi5.v1.ProductAdvertisingAPIv1.SearchItems"
     )
+    VARIATIONS_PATH = "/paapi5/getvariations"
+    VARIATIONS_TARGET = (
+        "com.amazon.paapi5.v1.ProductAdvertisingAPIv1.GetVariations"
+    )
+
+    _VARIATION_RESOURCES = [
+        "VariationSummary.Price.LowestPrice",
+        "VariationSummary.Price.HighestPrice",
+        "VariationSummary.VariationDimension",
+        "OffersV2.Listings.Price",
+        "Images.Primary.Large",
+        "ItemInfo.Title",
+    ]
 
     # Resources to request from the API (OffersV2 replaces deprecated Offers)
     _RESOURCES = [
@@ -107,11 +120,134 @@ class PAAPIClient(AmazonClient):
             logger.error("PA API returned non-JSON response.")
             return []
 
-        return self._parse_response(data, keywords)
+        products = self._parse_response(data, keywords)
+        if products:
+            products = await self._enrich_cheapest_variants(products)
+        return products
 
     async def close(self) -> None:
         """Close the underlying HTTP client."""
         await self._client.aclose()
+
+    # ────────────────────────────────────────────────────────
+    #  Variant enrichment — find cheapest variant per product
+    # ────────────────────────────────────────────────────────
+
+    async def _enrich_cheapest_variants(
+        self, products: list[Product]
+    ) -> list[Product]:
+        """For each product, query GetVariations and swap in the cheapest."""
+        import asyncio
+
+        enriched: list[Product] = []
+        for product in products:
+            try:
+                updated = await self._get_cheapest_variant(product)
+                enriched.append(updated)
+            except Exception as exc:
+                logger.debug(
+                    "Variant lookup failed for %s: %s", product.asin, exc
+                )
+                enriched.append(product)
+            await asyncio.sleep(1)  # respect rate limits
+        return enriched
+
+    async def _get_cheapest_variant(self, product: Product) -> Product:
+        """Call GetVariations for *product* and return the cheapest variant."""
+        payload: dict[str, Any] = {
+            "ASIN": product.asin,
+            "VariationCount": 10,
+            "VariationPage": 1,
+            "PartnerTag": self._partner_tag,
+            "PartnerType": "Associates",
+            "Marketplace": "www.amazon.sa",
+            "LanguagesOfPreference": ["ar_AE"],
+            "Resources": self._VARIATION_RESOURCES,
+        }
+
+        body = json.dumps(payload, separators=(",", ":"))
+        headers = self._sign_request(body, target=self.VARIATIONS_TARGET, path=self.VARIATIONS_PATH)
+
+        try:
+            resp = await self._client.post(
+                f"https://{self.HOST}{self.VARIATIONS_PATH}",
+                content=body,
+                headers=headers,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+        except Exception as exc:
+            logger.debug("GetVariations HTTP error for %s: %s", product.asin, exc)
+            return product
+
+        # ── Find cheapest from VariationSummary ─────────────
+        var_result = data.get("VariationsResult", {})
+        items = var_result.get("Items", [])
+        if not items:
+            return product
+
+        # Walk all variant items, pick the one with the lowest price
+        best_price = product.current_price
+        best_item: dict[str, Any] | None = None
+
+        for item in items:
+            offers_v2 = item.get("OffersV2", {})
+            listings = offers_v2.get("Listings", [])
+            if not listings:
+                continue
+            price_obj = listings[0].get("Price", {})
+            money = price_obj.get("Money", {})
+            price = money.get("Amount", 0.0)
+            if price > 0 and (best_price <= 0 or price < best_price):
+                best_price = price
+                best_item = item
+
+        if best_item is None or best_price >= product.current_price:
+            return product  # current variant is already cheapest
+
+        # ── Update product with cheapest variant's data ─────
+        logger.info(
+            "Cheaper variant found for %s: %.1f -> %.1f %s (ASIN %s)",
+            product.asin,
+            product.current_price,
+            best_price,
+            product.currency,
+            best_item.get("ASIN", "?"),
+        )
+
+        product.asin = best_item.get("ASIN", product.asin)
+        product.current_price = best_price
+        product.affiliate_url = best_item.get("DetailPageURL", product.affiliate_url)
+
+        # Update image if available
+        img = (
+            best_item.get("Images", {})
+            .get("Primary", {})
+            .get("Large", {})
+            .get("URL", "")
+        )
+        if img:
+            product.image_url = img
+
+        # Update title if available
+        title_val = (
+            best_item.get("ItemInfo", {})
+            .get("Title", {})
+            .get("DisplayValue", "")
+        )
+        if title_val:
+            product.title = PAAPIClient._trim_title(title_val)
+
+        # Recalculate savings against original price
+        if product.original_price > product.current_price > 0:
+            product.savings_amount = round(
+                product.original_price - product.current_price, 2
+            )
+            product.savings_percent = round(
+                (product.savings_amount / product.original_price) * 100, 1
+            )
+
+        return product
 
     # ────────────────────────────────────────────────────────
     #  Payload builder
@@ -149,8 +285,17 @@ class PAAPIClient(AmazonClient):
     #  AWS Signature V4 (from scratch)
     # ────────────────────────────────────────────────────────
 
-    def _sign_request(self, body: str) -> dict[str, str]:
+    def _sign_request(
+        self,
+        body: str,
+        *,
+        target: str | None = None,
+        path: str | None = None,
+    ) -> dict[str, str]:
         """Sign the request using AWS Signature V4 and return headers."""
+        target = target or self.SEARCH_TARGET
+        path = path or self.SEARCH_PATH
+
         now = datetime.now(timezone.utc)
         amz_date = now.strftime("%Y%m%dT%H%M%SZ")
         date_stamp = now.strftime("%Y%m%d")
@@ -161,7 +306,7 @@ class PAAPIClient(AmazonClient):
             "content-type": "application/json; charset=utf-8",
             "host": self.HOST,
             "x-amz-date": amz_date,
-            "x-amz-target": self.SEARCH_TARGET,
+            "x-amz-target": target,
         }
         signed_headers = ";".join(sorted(headers.keys()))
 
@@ -173,7 +318,7 @@ class PAAPIClient(AmazonClient):
 
         canonical_request = "\n".join([
             "POST",
-            self.SEARCH_PATH,
+            path,
             "",                    # empty query string
             canonical_headers,
             signed_headers,

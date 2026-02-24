@@ -38,13 +38,12 @@ class AdminNotifier:
     async def send_alert(self, message: str, level: str = "INFO") -> None:
         """Send a notification to the admin chat.
 
+        In development mode, also sends to all /start subscribers.
+
         Args:
             message: Body text of the notification.
             level: ``"INFO"``, ``"WARNING"``, or ``"ERROR"``.
         """
-        if not self._admin_chat_id:
-            return
-
         emoji = _LEVEL_EMOJI.get(level.upper(), "ℹ️")
         now = datetime.now(_RIYADH_TZ).strftime("%Y-%m-%d %H:%M:%S")
 
@@ -54,14 +53,33 @@ class AdminNotifier:
             f"⏰ {now}"
         )
 
+        # Collect all chat IDs to notify
+        targets: list[int | str] = []
+        if self._admin_chat_id:
+            targets.append(self._admin_chat_id)
+
+        # In dev mode, also send to /start subscribers
         try:
-            await self._bot.send_message(
-                chat_id=self._admin_chat_id,
-                text=text,
-                parse_mode=ParseMode.HTML,
-            )
-        except telegram.error.TelegramError as exc:
-            logger.error("Failed to send admin alert: %s", exc)
+            from src.config import settings
+
+            if settings.environment == "development":
+                from src.telegram.dev_bot import get_subscriber_ids
+
+                for sub_id in get_subscriber_ids():
+                    if str(sub_id) != str(self._admin_chat_id):
+                        targets.append(sub_id)
+        except Exception:
+            pass
+
+        for chat_id in targets:
+            try:
+                await self._bot.send_message(
+                    chat_id=chat_id,
+                    text=text,
+                    parse_mode=ParseMode.HTML,
+                )
+            except telegram.error.TelegramError as exc:
+                logger.error("Failed to send admin alert to %s: %s", chat_id, exc)
 
     async def send_error(self, message: str) -> None:
         """Shortcut for ``send_alert(message, "ERROR")``."""

@@ -43,6 +43,9 @@ class Settings(BaseSettings):
     # ── Logging ─────────────────────────────────────────────
     log_level: str = "INFO"
 
+    # ── Environment ────────────────────────────────────────
+    environment: str = "development"  # "development" or "production"
+
     # ── Validators ──────────────────────────────────────────
 
     @model_validator(mode="after")

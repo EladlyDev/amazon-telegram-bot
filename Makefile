@@ -1,4 +1,4 @@
-.PHONY: setup run dev clean
+.PHONY: setup run dev dev-bot clean
 
 VENV := venv
 PYTHON := $(VENV)/bin/python
@@ -17,6 +17,10 @@ run:
 
 dev:
 	LOG_LEVEL=DEBUG $(PYTHON) -m src.main
+
+dev-bot:
+	@echo "🤖 Starting dev bot — send /start to your bot on Telegram..."
+	$(PYTHON) run_dev_bot.py
 
 clean:
 	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
