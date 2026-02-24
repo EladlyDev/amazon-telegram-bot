@@ -1,0 +1,135 @@
+/* ── Custom Dashboard Styles ─────────────────────────────── */
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+::-webkit-scrollbar-track {
+    background: #f1f5f9;
+}
+::-webkit-scrollbar-thumb {
+    background: #94a3b8;
+    border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+    background: #64748b;
+}
+
+/* Sidebar scrollbar (dark) */
+.sidebar::-webkit-scrollbar-track {
+    background: #1e293b;
+}
+.sidebar::-webkit-scrollbar-thumb {
+    background: #475569;
+}
+
+/* Loading spinner */
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+.spinner {
+    width: 20px;
+    height: 20px;
+    border: 2px solid #e2e8f0;
+    border-top-color: #6366f1;
+    border-radius: 50%;
+    animation: spin 0.6s linear infinite;
+    display: inline-block;
+}
+
+/* Fade in animation */
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(8px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+.fade-in {
+    animation: fadeIn 0.3s ease-out;
+}
+
+/* Slide in from right (RTL) */
+@keyframes slideInRight {
+    from { opacity: 0; transform: translateX(20px); }
+    to   { opacity: 1; transform: translateX(0); }
+}
+.slide-in {
+    animation: slideInRight 0.3s ease-out;
+}
+
+/* Card hover effect */
+.card-hover {
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+.card-hover:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 25px -5px rgba(0, 0, 0, 0.1),
+                0 4px 10px -5px rgba(0, 0, 0, 0.04);
+}
+
+/* Pulse animation for status dots */
+@keyframes pulse-dot {
+    0%, 100% { opacity: 1; }
+    50%      { opacity: 0.4; }
+}
+.pulse-dot {
+    animation: pulse-dot 2s ease-in-out infinite;
+}
+
+/* Toast animation */
+@keyframes toastIn {
+    from { opacity: 0; transform: translateX(-30px); }
+    to   { opacity: 1; transform: translateX(0); }
+}
+@keyframes toastOut {
+    from { opacity: 1; transform: translateX(0); }
+    to   { opacity: 0; transform: translateX(-30px); }
+}
+.toast-enter {
+    animation: toastIn 0.3s ease-out;
+}
+.toast-exit {
+    animation: toastOut 0.3s ease-in forwards;
+}
+
+/* Chart bars */
+.chart-bar {
+    transition: height 0.5s ease-out;
+    min-height: 4px;
+    border-radius: 4px 4px 0 0;
+}
+
+/* Nav link active indicator */
+.nav-active {
+    background: rgba(99, 102, 241, 0.15);
+    border-right: 3px solid #818cf8;
+}
+
+/* Status badge */
+.status-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 10px;
+    border-radius: 9999px;
+    font-size: 0.75rem;
+    font-weight: 500;
+}
+
+/* Table striped rows */
+.table-striped tbody tr:nth-child(even) {
+    background-color: #f8fafc;
+}
+
+/* Gradient text */
+.gradient-text {
+    background: linear-gradient(135deg, #6366f1, #8b5cf6);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+/* RTL fixes */
+[dir="rtl"] input,
+[dir="rtl"] textarea,
+[dir="rtl"] select {
+    text-align: right;
+}

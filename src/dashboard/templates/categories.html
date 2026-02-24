@@ -1,0 +1,490 @@
+{% extends "base.html" %}
+
+{% block title %}الفئات{% endblock %}
+{% block page_title %}📂 الفئات{% endblock %}
+
+{% block content %}
+<div x-data="categoriesPage()" x-init="loadCategories()" class="space-y-6">
+
+    <!-- ── Header Row ────────────────────────────────────── -->
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+            <h1 class="text-xl font-extrabold text-gray-800">📂 إدارة الفئات</h1>
+            <p class="text-sm text-gray-500 mt-1">أضف فئات المنتجات والكلمات المفتاحية للبحث</p>
+        </div>
+        <button @click="openCreateModal()" class="px-5 py-2.5 bg-indigo-500 hover:bg-indigo-600 text-white text-sm font-medium
+                       rounded-xl shadow-sm transition-all flex items-center gap-2 self-start">
+            <span>➕</span> إضافة فئة جديدة
+        </button>
+    </div>
+
+    <!-- ── Loading State ─────────────────────────────────── -->
+    <div x-show="loading && categories.length === 0" class="text-center py-16">
+        <div class="spinner mx-auto mb-4" style="width:32px;height:32px;border-width:3px"></div>
+        <p class="text-gray-400 text-sm">جارِ تحميل الفئات...</p>
+    </div>
+
+    <!-- ── Empty State ───────────────────────────────────── -->
+    <div x-show="!loading && categories.length === 0" style="display:none"
+        class="text-center py-16 bg-white rounded-2xl border border-gray-100 shadow-sm">
+        <div class="text-5xl mb-4">📂</div>
+        <p class="text-gray-500 font-medium">لا توجد فئات بعد</p>
+        <p class="text-gray-400 text-sm mt-1">أضف فئتك الأولى للبدء في البحث والنشر</p>
+        <button @click="openCreateModal()" class="mt-5 px-5 py-2.5 bg-indigo-500 hover:bg-indigo-600 text-white text-sm
+                       font-medium rounded-xl shadow-sm transition-all">
+            ➕ إضافة فئة
+        </button>
+    </div>
+
+    <!-- ── Categories List ───────────────────────────────── -->
+    <div class="space-y-4">
+        <template x-for="cat in categories" :key="cat.id">
+            <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden card-hover">
+
+                <!-- Card Header -->
+                <div class="px-5 py-4 cursor-pointer" @click="cat._open = !cat._open">
+                    <div class="flex items-center justify-between gap-4">
+                        <!-- Right: Name & badge -->
+                        <div class="flex items-center gap-3 flex-1 min-w-0">
+                            <div class="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
+                                :class="cat.is_active ? 'bg-indigo-50' : 'bg-gray-100'">
+                                <span class="text-lg">📂</span>
+                            </div>
+                            <div class="min-w-0">
+                                <div class="flex items-center gap-2 flex-wrap">
+                                    <span class="font-bold text-sm text-gray-800 truncate"
+                                        x-text="cat.name_ar || cat.name"></span>
+                                    <span class="text-[10px] px-2 py-0.5 rounded-full font-medium" :class="cat.is_active
+                                            ? 'bg-emerald-100 text-emerald-700'
+                                            : 'bg-gray-100 text-gray-500'"
+                                        x-text="cat.is_active ? 'نشط' : 'متوقف'"></span>
+                                    <span
+                                        class="text-[10px] bg-indigo-50 text-indigo-600 px-2 py-0.5 rounded-full font-medium"
+                                        x-text="(cat.keywords?.length || 0) + ' كلمة'"></span>
+                                </div>
+                                <!-- Filter summary -->
+                                <div class="flex items-center gap-2 mt-1 flex-wrap">
+                                    <template x-if="cat.min_discount_percent > 0">
+                                        <span class="text-[10px] text-gray-400"
+                                            x-text="'خصم > ' + cat.min_discount_percent + '%'"></span>
+                                    </template>
+                                    <template x-if="cat.min_price > 0 || cat.max_price > 0">
+                                        <span class="text-[10px] text-gray-400"
+                                            x-text="(cat.min_price || 0) + ' - ' + (cat.max_price || '∞') + ' ريال'"></span>
+                                    </template>
+                                    <template x-if="cat.require_prime">
+                                        <span class="text-[10px] text-gray-400">🚀 برايم</span>
+                                    </template>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Left: Actions -->
+                        <div class="flex items-center gap-2 shrink-0" @click.stop>
+                            <!-- Active toggle -->
+                            <button @click="toggleCategory(cat)"
+                                class="w-10 h-6 rounded-full relative transition-colors duration-200"
+                                :class="cat.is_active ? 'bg-emerald-500' : 'bg-gray-300'">
+                                <span
+                                    class="absolute top-0.5 w-5 h-5 bg-white rounded-full shadow-sm transition-all duration-200"
+                                    :class="cat.is_active ? 'left-0.5' : 'left-[18px]'"></span>
+                            </button>
+                            <!-- Edit -->
+                            <button @click="openEditModal(cat)"
+                                class="p-2 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-indigo-600 transition-colors"
+                                title="تعديل">
+                                ✏️
+                            </button>
+                            <!-- Delete -->
+                            <button @click="deleteCategory(cat.id)"
+                                class="p-2 rounded-lg hover:bg-red-50 text-gray-400 hover:text-red-500 transition-colors"
+                                title="حذف">
+                                🗑️
+                            </button>
+                            <!-- Expand arrow -->
+                            <svg class="w-4 h-4 text-gray-400 transition-transform duration-200"
+                                :class="cat._open && 'rotate-180'" fill="none" stroke="currentColor"
+                                viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M19 9l-7 7-7-7" />
+                            </svg>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Card Body (expandable) -->
+                <div x-show="cat._open" x-collapse>
+                    <div class="px-5 pb-5 pt-1 border-t border-gray-50">
+
+                        <!-- Filter details -->
+                        <div class="flex flex-wrap gap-2 mb-4">
+                            <span class="text-xs bg-gray-50 text-gray-500 px-3 py-1.5 rounded-lg"
+                                x-text="'🔍 ' + (cat.amazon_search_index || 'All')"></span>
+                            <template x-if="cat.amazon_browse_node">
+                                <span class="text-xs bg-gray-50 text-gray-500 px-3 py-1.5 rounded-lg"
+                                    x-text="'📁 Node: ' + cat.amazon_browse_node"></span>
+                            </template>
+                            <span class="text-xs bg-gray-50 text-gray-500 px-3 py-1.5 rounded-lg"
+                                x-text="'💰 ' + (cat.min_price || 0) + ' - ' + (cat.max_price || '∞') + ' ريال'"></span>
+                            <span class="text-xs bg-gray-50 text-gray-500 px-3 py-1.5 rounded-lg"
+                                x-text="'📉 خصم ≥ ' + (cat.min_discount_percent || 0) + '%'"></span>
+                            <template x-if="cat.require_prime">
+                                <span class="text-xs bg-blue-50 text-blue-600 px-3 py-1.5 rounded-lg">🚀 برايم
+                                    فقط</span>
+                            </template>
+                            <template x-if="cat.require_image">
+                                <span class="text-xs bg-purple-50 text-purple-600 px-3 py-1.5 rounded-lg">🖼️ صورة
+                                    مطلوبة</span>
+                            </template>
+                        </div>
+
+                        <!-- Keywords section -->
+                        <div>
+                            <h4 class="text-xs font-bold text-gray-600 mb-3">🏷️ الكلمات المفتاحية</h4>
+
+                            <!-- Keywords list -->
+                            <div class="flex flex-wrap gap-2 mb-3">
+                                <template x-for="kw in (cat.keywords || [])" :key="kw.id">
+                                    <div class="group inline-flex items-center gap-1.5 rounded-full pl-2 pr-1 py-1 text-xs font-medium transition-all relative"
+                                        :class="kw.is_active
+                                            ? 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100'
+                                            : 'bg-gray-100 text-gray-400 line-through'">
+                                        <span x-text="kw.keyword"></span>
+                                        <!-- Stats tooltip -->
+                                        <span
+                                            class="hidden group-hover:flex absolute -top-8 right-0 bg-gray-800 text-white text-[10px] px-2 py-1 rounded-lg whitespace-nowrap z-10"
+                                            x-text="'استُخدمت ' + (kw.total_uses || 0) + ' مرة'"></span>
+                                        <!-- Toggle -->
+                                        <button @click="toggleKeyword(kw.id, kw.is_active)"
+                                            class="p-0.5 rounded-full hover:bg-white/50 transition-colors"
+                                            :title="kw.is_active ? 'تعطيل' : 'تفعيل'">
+                                            <span x-text="kw.is_active ? '👁️' : '👁️‍🗨️'" class="text-[10px]"></span>
+                                        </button>
+                                        <!-- Delete -->
+                                        <button @click="deleteKeyword(kw.id)"
+                                            class="p-0.5 rounded-full hover:bg-red-100 hover:text-red-500 transition-colors">
+                                            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                                    d="M6 18L18 6M6 6l12 12" />
+                                            </svg>
+                                        </button>
+                                    </div>
+                                </template>
+
+                                <template x-if="!cat.keywords || cat.keywords.length === 0">
+                                    <span class="text-xs text-gray-400">لا توجد كلمات مفتاحية</span>
+                                </template>
+                            </div>
+
+                            <!-- Add keyword input -->
+                            <div class="flex gap-2">
+                                <input type="text" :placeholder="'أضف كلمة مفتاحية جديدة...'" x-model="cat._newKeyword"
+                                    @keydown.enter="addKeyword(cat.id, cat._newKeyword); cat._newKeyword = ''" class="flex-1 px-3 py-2 text-xs bg-gray-50 border border-gray-200 rounded-xl
+                                              focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500
+                                              focus:bg-white transition-all outline-none">
+                                <button @click="addKeyword(cat.id, cat._newKeyword); cat._newKeyword = ''" class="px-4 py-2 bg-indigo-500 hover:bg-indigo-600 text-white text-xs
+                                               font-medium rounded-xl transition-colors">
+                                    إضافة
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </template>
+    </div>
+
+    <!-- ── Create/Edit Modal ─────────────────────────────── -->
+    <div x-show="showModal" x-transition:enter="transition ease-out duration-200" x-transition:enter-start="opacity-0"
+        x-transition:enter-end="opacity-100" x-transition:leave="transition ease-in duration-150"
+        x-transition:leave-start="opacity-100" x-transition:leave-end="opacity-0"
+        @keydown.escape.window="showModal = false"
+        class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" style="display: none">
+
+        <!-- Modal card -->
+        <div @click.outside="showModal = false" x-transition:enter="transition ease-out duration-200"
+            x-transition:enter-start="opacity-0 scale-95" x-transition:enter-end="opacity-100 scale-100"
+            class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+
+            <!-- Modal header -->
+            <div class="px-6 py-5 border-b border-gray-100 flex items-center justify-between">
+                <h3 class="text-lg font-bold text-gray-800" x-text="editingCategory ? 'تعديل فئة' : 'إضافة فئة جديدة'">
+                </h3>
+                <button @click="showModal = false"
+                    class="p-2 rounded-lg hover:bg-gray-100 text-gray-400 transition-colors">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                </button>
+            </div>
+
+            <!-- Form -->
+            <div class="p-6 space-y-5">
+
+                <!-- Row 1: Names -->
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-xs font-medium text-gray-600 mb-1.5">الاسم (إنجليزي)</label>
+                        <input type="text" x-model="form.name" placeholder="Electronics" class="w-full px-3 py-2.5 text-sm bg-gray-50 border border-gray-200 rounded-xl
+                                      focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 focus:bg-white
+                                      transition-all outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-gray-600 mb-1.5">الاسم (عربي)</label>
+                        <input type="text" x-model="form.name_ar" placeholder="إلكترونيات" class="w-full px-3 py-2.5 text-sm bg-gray-50 border border-gray-200 rounded-xl
+                                      focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 focus:bg-white
+                                      transition-all outline-none">
+                    </div>
+                </div>
+
+                <!-- Row 2: Amazon search -->
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-xs font-medium text-gray-600 mb-1.5">فهرس البحث (Search Index)</label>
+                        <select x-model="form.amazon_search_index" class="w-full px-3 py-2.5 text-sm bg-gray-50 border border-gray-200 rounded-xl
+                                       focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 focus:bg-white
+                                       transition-all outline-none">
+                            <option value="All">All — الكل</option>
+                            <option value="Electronics">Electronics — إلكترونيات</option>
+                            <option value="Fashion">Fashion — أزياء</option>
+                            <option value="Beauty">Beauty — جمال</option>
+                            <option value="HomeAndKitchen">HomeAndKitchen — المنزل والمطبخ</option>
+                            <option value="Computers">Computers — حواسيب</option>
+                            <option value="Sports">Sports — رياضة</option>
+                            <option value="Toys">Toys — ألعاب</option>
+                            <option value="Books">Books — كتب</option>
+                            <option value="HealthPersonalCare">HealthPersonalCare — صحة وعناية</option>
+                            <option value="Automotive">Automotive — سيارات</option>
+                            <option value="Baby">Baby — أطفال</option>
+                            <option value="OfficeProducts">OfficeProducts — مكتبية</option>
+                            <option value="Tools">Tools — أدوات</option>
+                            <option value="Garden">Garden — حديقة</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-gray-600 mb-1.5">Browse Node (اختياري)</label>
+                        <input type="text" x-model="form.amazon_browse_node" placeholder="12345678" class="w-full px-3 py-2.5 text-sm bg-gray-50 border border-gray-200 rounded-xl
+                                      focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 focus:bg-white
+                                      transition-all outline-none">
+                    </div>
+                </div>
+
+                <!-- Row 3: Price range -->
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-xs font-medium text-gray-600 mb-1.5">الحد الأدنى للسعر (ريال)</label>
+                        <input type="number" x-model.number="form.min_price" placeholder="0" min="0" step="1" class="w-full px-3 py-2.5 text-sm bg-gray-50 border border-gray-200 rounded-xl
+                                      focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 focus:bg-white
+                                      transition-all outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-gray-600 mb-1.5">الحد الأقصى للسعر (ريال)</label>
+                        <input type="number" x-model.number="form.max_price" placeholder="0 = بلا حد" min="0" step="1"
+                            class="w-full px-3 py-2.5 text-sm bg-gray-50 border border-gray-200 rounded-xl
+                                      focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 focus:bg-white
+                                      transition-all outline-none">
+                    </div>
+                </div>
+
+                <!-- Row 4: Discount & sort -->
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-xs font-medium text-gray-600 mb-1.5">الحد الأدنى للخصم (%)</label>
+                        <input type="number" x-model.number="form.min_discount_percent" placeholder="0" min="0"
+                            max="100" step="1" class="w-full px-3 py-2.5 text-sm bg-gray-50 border border-gray-200 rounded-xl
+                                      focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 focus:bg-white
+                                      transition-all outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-gray-600 mb-1.5">ترتيب العرض</label>
+                        <input type="number" x-model.number="form.sort_order" placeholder="0" min="0" class="w-full px-3 py-2.5 text-sm bg-gray-50 border border-gray-200 rounded-xl
+                                      focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 focus:bg-white
+                                      transition-all outline-none">
+                    </div>
+                </div>
+
+                <!-- Row 5: Toggles -->
+                <div class="flex flex-wrap gap-6 pt-2">
+                    <!-- Require Prime -->
+                    <label class="flex items-center gap-3 cursor-pointer">
+                        <button type="button" @click="form.require_prime = !form.require_prime"
+                            class="w-10 h-6 rounded-full relative transition-colors duration-200"
+                            :class="form.require_prime ? 'bg-emerald-500' : 'bg-gray-300'">
+                            <span
+                                class="absolute top-0.5 w-5 h-5 bg-white rounded-full shadow-sm transition-all duration-200"
+                                :class="form.require_prime ? 'left-0.5' : 'left-[18px]'"></span>
+                        </button>
+                        <span class="text-xs text-gray-600">🚀 برايم فقط</span>
+                    </label>
+
+                    <!-- Require Image -->
+                    <label class="flex items-center gap-3 cursor-pointer">
+                        <button type="button" @click="form.require_image = !form.require_image"
+                            class="w-10 h-6 rounded-full relative transition-colors duration-200"
+                            :class="form.require_image ? 'bg-emerald-500' : 'bg-gray-300'">
+                            <span
+                                class="absolute top-0.5 w-5 h-5 bg-white rounded-full shadow-sm transition-all duration-200"
+                                :class="form.require_image ? 'left-0.5' : 'left-[18px]'"></span>
+                        </button>
+                        <span class="text-xs text-gray-600">🖼️ صورة مطلوبة</span>
+                    </label>
+
+                    <!-- Is Active -->
+                    <label class="flex items-center gap-3 cursor-pointer">
+                        <button type="button" @click="form.is_active = !form.is_active"
+                            class="w-10 h-6 rounded-full relative transition-colors duration-200"
+                            :class="form.is_active ? 'bg-emerald-500' : 'bg-gray-300'">
+                            <span
+                                class="absolute top-0.5 w-5 h-5 bg-white rounded-full shadow-sm transition-all duration-200"
+                                :class="form.is_active ? 'left-0.5' : 'left-[18px]'"></span>
+                        </button>
+                        <span class="text-xs text-gray-600">✅ نشط</span>
+                    </label>
+                </div>
+            </div>
+
+            <!-- Modal footer -->
+            <div class="px-6 py-4 border-t border-gray-100 flex items-center justify-end gap-3">
+                <button @click="showModal = false" class="px-5 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm
+                               font-medium rounded-xl transition-colors">
+                    إلغاء
+                </button>
+                <button @click="saveCategory()" :disabled="saving" class="px-6 py-2.5 bg-indigo-500 hover:bg-indigo-600 text-white text-sm
+                               font-medium rounded-xl shadow-sm transition-all disabled:opacity-50
+                               flex items-center gap-2">
+                    <span x-show="saving" class="spinner" style="width:14px;height:14px;border-width:2px"></span>
+                    <span x-text="saving ? 'جارِ الحفظ...' : 'حفظ'"></span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    function categoriesPage() {
+        return {
+            categories: [],
+            showModal: false,
+            editingCategory: null,
+            loading: false,
+            saving: false,
+            form: {
+                name: '', name_ar: '', amazon_search_index: 'All', amazon_browse_node: '',
+                min_price: 0, max_price: 0, min_discount_percent: 0,
+                require_prime: false, require_image: true, is_active: true, sort_order: 0,
+            },
+
+            async loadCategories() {
+                this.loading = true;
+                try {
+                    const data = await apiCall('/api/categories');
+                    this.categories = (data || []).map(c => ({
+                        ...c, _open: false, _newKeyword: ''
+                    }));
+                } catch (e) { }
+                this.loading = false;
+            },
+
+            openCreateModal() {
+                this.editingCategory = null;
+                this.form = {
+                    name: '', name_ar: '', amazon_search_index: 'All', amazon_browse_node: '',
+                    min_price: 0, max_price: 0, min_discount_percent: 0,
+                    require_prime: false, require_image: true, is_active: true, sort_order: 0,
+                };
+                this.showModal = true;
+            },
+
+            openEditModal(cat) {
+                this.editingCategory = cat;
+                this.form = {
+                    name: cat.name || '',
+                    name_ar: cat.name_ar || '',
+                    amazon_search_index: cat.amazon_search_index || 'All',
+                    amazon_browse_node: cat.amazon_browse_node || '',
+                    min_price: cat.min_price || 0,
+                    max_price: cat.max_price || 0,
+                    min_discount_percent: cat.min_discount_percent || 0,
+                    require_prime: cat.require_prime || false,
+                    require_image: cat.require_image ?? true,
+                    is_active: cat.is_active ?? true,
+                    sort_order: cat.sort_order || 0,
+                };
+                this.showModal = true;
+            },
+
+            async saveCategory() {
+                if (!this.form.name && !this.form.name_ar) {
+                    showToast('يرجى إدخال اسم الفئة', 'error');
+                    return;
+                }
+                this.saving = true;
+                try {
+                    if (this.editingCategory) {
+                        await apiCall(`/api/categories/${this.editingCategory.id}`, 'PUT', this.form);
+                        showToast('تم تحديث الفئة بنجاح', 'success');
+                    } else {
+                        await apiCall('/api/categories', 'POST', this.form);
+                        showToast('تم إضافة الفئة بنجاح', 'success');
+                    }
+                    this.showModal = false;
+                    await this.loadCategories();
+                } catch (e) { }
+                this.saving = false;
+            },
+
+            async deleteCategory(id) {
+                const ok = await confirmAction('هل أنت متأكد من حذف هذه الفئة وجميع كلماتها المفتاحية؟');
+                if (!ok) return;
+                try {
+                    await apiCall(`/api/categories/${id}`, 'DELETE');
+                    showToast('تم حذف الفئة', 'success');
+                    await this.loadCategories();
+                } catch (e) { }
+            },
+
+            async toggleCategory(cat) {
+                try {
+                    await apiCall(`/api/categories/${cat.id}`, 'PUT', { is_active: !cat.is_active });
+                    cat.is_active = !cat.is_active;
+                    showToast(cat.is_active ? 'تم تفعيل الفئة' : 'تم تعطيل الفئة', 'info');
+                } catch (e) { }
+            },
+
+            async addKeyword(categoryId, keyword) {
+                if (!keyword || !keyword.trim()) return;
+                try {
+                    await apiCall(`/api/categories/${categoryId}/keywords`, 'POST', {
+                        keyword: keyword.trim(), sort_order: 0
+                    });
+                    showToast('تم إضافة الكلمة المفتاحية', 'success');
+                    await this.loadCategories();
+                } catch (e) { }
+            },
+
+            async toggleKeyword(kwId, currentState) {
+                try {
+                    await apiCall(`/api/keywords/${kwId}`, 'PUT', { is_active: !currentState });
+                    showToast(!currentState ? 'تم تفعيل الكلمة' : 'تم تعطيل الكلمة', 'info');
+                    await this.loadCategories();
+                } catch (e) { }
+            },
+
+            async deleteKeyword(kwId) {
+                const ok = await confirmAction('هل تريد حذف هذه الكلمة المفتاحية؟');
+                if (!ok) return;
+                try {
+                    await apiCall(`/api/keywords/${kwId}`, 'DELETE');
+                    showToast('تم حذف الكلمة المفتاحية', 'success');
+                    await this.loadCategories();
+                } catch (e) { }
+            },
+        };
+    }
+</script>
+{% endblock %}

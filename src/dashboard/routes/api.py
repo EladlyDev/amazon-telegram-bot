@@ -41,13 +41,22 @@ def _serialize(obj: Any) -> Any:
 
     # SQLAlchemy model → dict via __table__.columns
     if hasattr(obj, "__table__"):
+        from sqlalchemy import inspect as sa_inspect
+
         data: dict[str, Any] = {}
         for col in obj.__table__.columns:
             val = getattr(obj, col.name, None)
             data[col.name] = _serialize(val)
-        # Include eager-loaded relationships
-        if hasattr(obj, "keywords"):
-            data["keywords"] = _serialize(obj.keywords)
+        # Include already-loaded relationships only (avoid lazy loads)
+        try:
+            insp = sa_inspect(obj)
+            for rel_name in insp.mapper.relationships.keys():
+                if rel_name in insp.dict:  # already loaded in memory
+                    data[rel_name] = _serialize(insp.dict[rel_name])
+        except Exception:
+            pass
+        # Ensure 'keywords' key exists for Category objects
+        data.setdefault("keywords", [])
         return data
 
     return str(obj)

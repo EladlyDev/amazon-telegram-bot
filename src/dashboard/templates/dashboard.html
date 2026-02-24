@@ -1,0 +1,277 @@
+{% extends "base.html" %}
+
+{% block title %}الرئيسية{% endblock %}
+{% block page_title %}📊 الرئيسية{% endblock %}
+
+{% block content %}
+<div x-data="dashboardPage()" class="space-y-6">
+
+    <!-- ── A) Bot Status Banner ──────────────────────────── -->
+    <div class="rounded-2xl p-5 shadow-sm transition-all duration-300" :class="isRunning
+            ? 'bg-gradient-to-l from-emerald-50 to-green-50 border border-emerald-200'
+            : 'bg-gradient-to-l from-amber-50 to-yellow-50 border border-amber-200'">
+        <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+            <div class="flex items-center gap-3">
+                <div class="w-3 h-3 rounded-full pulse-dot" :class="isRunning ? 'bg-emerald-500' : 'bg-amber-500'">
+                </div>
+                <div>
+                    <span class="font-bold text-sm" :class="isRunning ? 'text-emerald-800' : 'text-amber-800'"
+                        x-text="isRunning ? '🟢 البوت يعمل' : '🟡 البوت متوقف'"></span>
+                    <template x-if="isRunning && nextRun">
+                        <span class="text-xs text-gray-500 mr-3">
+                            التشغيل القادم: <span x-text="nextRun" class="font-medium"></span>
+                        </span>
+                    </template>
+                </div>
+            </div>
+            <div class="flex gap-2 flex-wrap">
+                <!-- Start -->
+                <button x-show="!isRunning" @click="startBot()" :disabled="loading" class="px-4 py-2 bg-emerald-500 hover:bg-emerald-600 text-white text-xs
+                               font-medium rounded-xl shadow-sm transition-all disabled:opacity-50">
+                    ▶️ تشغيل
+                </button>
+                <!-- Stop -->
+                <button x-show="isRunning" @click="stopBot()" :disabled="loading" class="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white text-xs
+                               font-medium rounded-xl shadow-sm transition-all disabled:opacity-50">
+                    ⏸ إيقاف
+                </button>
+                <!-- Trigger -->
+                <button @click="triggerNow()" :disabled="triggerLoading" class="px-4 py-2 bg-indigo-500 hover:bg-indigo-600 text-white text-xs
+                               font-medium rounded-xl shadow-sm transition-all disabled:opacity-50
+                               flex items-center gap-2">
+                    <span x-show="!triggerLoading">🔄 نشر الآن</span>
+                    <span x-show="triggerLoading" class="flex items-center gap-2">
+                        <span class="spinner"></span> جارِ النشر...
+                    </span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── B) Stats Cards ────────────────────────────────── -->
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+
+        <!-- Total published -->
+        <div class="bg-white rounded-2xl p-5 shadow-sm card-hover border border-gray-100">
+            <div class="flex items-start justify-between">
+                <div>
+                    <p class="text-xs text-gray-500 mb-1">إجمالي المنشورات</p>
+                    <p class="text-2xl font-extrabold text-gray-800">{{ stats.total_published | default(0) }}</p>
+                </div>
+                <div class="w-11 h-11 rounded-xl bg-indigo-50 flex items-center justify-center">
+                    <span class="text-xl">📊</span>
+                </div>
+            </div>
+            <div class="mt-3 text-xs text-gray-400">
+                هذا الأسبوع: <span class="text-indigo-600 font-medium">{{ stats.week_count | default(0) }}</span>
+            </div>
+        </div>
+
+        <!-- Today -->
+        <div class="bg-white rounded-2xl p-5 shadow-sm card-hover border border-gray-100">
+            <div class="flex items-start justify-between">
+                <div>
+                    <p class="text-xs text-gray-500 mb-1">منشورات اليوم</p>
+                    <p class="text-2xl font-extrabold text-gray-800">{{ stats.today_count | default(0) }}</p>
+                </div>
+                <div class="w-11 h-11 rounded-xl bg-emerald-50 flex items-center justify-center">
+                    <span class="text-xl">📅</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Success rate -->
+        <div class="bg-white rounded-2xl p-5 shadow-sm card-hover border border-gray-100">
+            <div class="flex items-start justify-between">
+                <div>
+                    <p class="text-xs text-gray-500 mb-1">نسبة النجاح</p>
+                    <p class="text-2xl font-extrabold text-gray-800">{{ stats.success_rate | default(100) }}%</p>
+                </div>
+                <div class="w-11 h-11 rounded-xl bg-green-50 flex items-center justify-center">
+                    <span class="text-xl">✅</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Failed -->
+        <div class="bg-white rounded-2xl p-5 shadow-sm card-hover border border-gray-100">
+            <div class="flex items-start justify-between">
+                <div>
+                    <p class="text-xs text-gray-500 mb-1">فشل</p>
+                    <p class="text-2xl font-extrabold text-gray-800">{{ stats.failed_count | default(0) }}</p>
+                </div>
+                <div class="w-11 h-11 rounded-xl bg-red-50 flex items-center justify-center">
+                    <span class="text-xl">❌</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── C) Chart + Quick Info ──────────────────────────── -->
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+        <!-- Chart (2 cols) -->
+        <div class="lg:col-span-2 bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
+            <h3 class="text-sm font-bold text-gray-700 mb-5">📈 آخر 7 أيام</h3>
+            <div class="flex items-end gap-3 h-44">
+                {% for day in daily_stats %}
+                {% set max_count = daily_stats | map(attribute='count') | max %}
+                {% set bar_height = ((day.count / max_count * 100) if max_count > 0 else 0) | int %}
+                <div class="flex-1 flex flex-col items-center gap-2">
+                    <!-- Count label -->
+                    <span class="text-xs font-bold text-gray-500">{{ day.count }}</span>
+                    <!-- Bar -->
+                    <div class="w-full rounded-t-lg transition-all duration-500 ease-out
+                                {% if day.failed > 0 %}bg-gradient-to-t from-red-400 to-indigo-400{% else %}bg-gradient-to-t from-indigo-400 to-indigo-500{% endif %}"
+                        style="height: {{ [bar_height, 4] | max }}%; min-height: 4px;">
+                    </div>
+                    <!-- Day label -->
+                    <span class="text-[10px] text-gray-400 leading-tight text-center">
+                        {{ day.date[-5:] }}
+                    </span>
+                </div>
+                {% endfor %}
+            </div>
+            {% if not daily_stats %}
+            <div class="h-44 flex items-center justify-center text-gray-400 text-sm">
+                لا توجد بيانات بعد
+            </div>
+            {% endif %}
+        </div>
+
+        <!-- Quick info -->
+        <div class="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
+            <h3 class="text-sm font-bold text-gray-700 mb-5">📋 معلومات سريعة</h3>
+            <div class="space-y-4">
+                <div class="flex items-center justify-between py-2 border-b border-gray-50">
+                    <span class="text-xs text-gray-500">الفئات النشطة</span>
+                    <span class="text-sm font-bold text-gray-800">{{ stats.active_categories | default(0) }}</span>
+                </div>
+                <div class="flex items-center justify-between py-2 border-b border-gray-50">
+                    <span class="text-xs text-gray-500">الكلمات المفتاحية</span>
+                    <span class="text-sm font-bold text-gray-800">{{ stats.total_keywords | default(0) }}</span>
+                </div>
+                <div class="flex items-center justify-between py-2 border-b border-gray-50">
+                    <span class="text-xs text-gray-500">آخر نشر</span>
+                    <span class="text-xs font-medium text-gray-600">
+                        {% if stats.last_publish_at %}
+                        {{ stats.last_publish_at[:16] | replace('T', ' ') }}
+                        {% else %}
+                        <span class="text-gray-400">لم يتم النشر بعد</span>
+                        {% endif %}
+                    </span>
+                </div>
+                <div class="flex items-center justify-between py-2">
+                    <span class="text-xs text-gray-500">حالة الجدولة</span>
+                    <span class="text-xs font-medium">
+                        {% if next_run %}
+                        <span class="text-emerald-600">{{ next_run }}</span>
+                        {% else %}
+                        <span class="text-gray-400">غير مجدول</span>
+                        {% endif %}
+                    </span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── D) Recent Activity ────────────────────────────── -->
+    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+        <div class="px-6 py-4 border-b border-gray-100">
+            <h3 class="text-sm font-bold text-gray-700">📋 النشاط الأخير</h3>
+        </div>
+
+        {% if recent_logs %}
+        <div class="overflow-x-auto">
+            <table class="w-full text-sm table-striped">
+                <thead>
+                    <tr class="text-xs text-gray-500 bg-gray-50/70">
+                        <th class="text-right px-6 py-3 font-medium">الوقت</th>
+                        <th class="text-right px-6 py-3 font-medium">الحدث</th>
+                        <th class="text-right px-6 py-3 font-medium hidden sm:table-cell">التفاصيل</th>
+                        <th class="text-right px-6 py-3 font-medium">الحالة</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for log in recent_logs %}
+                    <tr class="border-b border-gray-50 hover:bg-gray-50/50 transition-colors">
+                        <td class="px-6 py-3 text-xs text-gray-400 whitespace-nowrap">
+                            {{ log.created_at.strftime('%H:%M:%S') if log.created_at else '—' }}
+                        </td>
+                        <td class="px-6 py-3 text-xs text-gray-700">
+                            {{ log.action | default('—') }}
+                        </td>
+                        <td class="px-6 py-3 text-xs text-gray-500 hidden sm:table-cell max-w-xs truncate">
+                            {{ log.message | default('—') | truncate(80) }}
+                        </td>
+                        <td class="px-6 py-3">
+                            {% if log.level == 'ERROR' %}
+                            <span class="status-badge bg-red-100 text-red-700">خطأ</span>
+                            {% elif log.level == 'WARNING' %}
+                            <span class="status-badge bg-amber-100 text-amber-700">تنبيه</span>
+                            {% else %}
+                            <span class="status-badge bg-blue-100 text-blue-700">معلومة</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="px-6 py-12 text-center text-gray-400 text-sm">
+            لا يوجد نشاط مسجّل بعد
+        </div>
+        {% endif %}
+    </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    function dashboardPage() {
+        return {
+            isRunning: {% if stats.bot_is_running %}true{% else %} false{% endif %},
+        nextRun: '{{ next_run | default("") }}',
+            loading: false,
+                triggerLoading: false,
+
+                    async startBot() {
+            this.loading = true;
+            try {
+                await apiCall('/api/bot/start', 'POST');
+                this.isRunning = true;
+                showToast('تم تشغيل البوت بنجاح', 'success');
+            } catch (e) { }
+            this.loading = false;
+        },
+
+        async stopBot() {
+            this.loading = true;
+            try {
+                await apiCall('/api/bot/stop', 'POST');
+                this.isRunning = false;
+                showToast('تم إيقاف البوت', 'info');
+            } catch (e) { }
+            this.loading = false;
+        },
+
+        async triggerNow() {
+            this.triggerLoading = true;
+            try {
+                const res = await apiCall('/api/bot/trigger', 'POST');
+                if (res && res.success) {
+                    showToast('تم النشر: ' + (res.product_title || ''), 'success');
+                } else {
+                    showToast(res?.message || 'لم يتم العثور على منتج مناسب', 'info');
+                }
+            } catch (e) {
+                showToast('فشل في تنفيذ النشر', 'error');
+            }
+            this.triggerLoading = false;
+        }
+    };
+}
+</script>
+{% endblock %}
