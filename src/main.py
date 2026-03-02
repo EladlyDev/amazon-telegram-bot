@@ -138,6 +138,16 @@ async def main() -> None:  # noqa: C901 — orchestration function
     repo = Repository()
     logger.info("Database initialised.")
 
+    # ── 1b. Ensure admin user exists ──────────────────────
+    recovery_key = await repo.ensure_admin_exists()
+    if recovery_key:
+        logger.info("")
+        logger.info("  ╔════════════════════════════════════════════╗")
+        logger.info("  ║  🔑 مفتاح الاسترداد (يظهر مرة واحدة فقط)  ║")
+        logger.info("  ║  Recovery Key: %-27s ║", recovery_key)
+        logger.info("  ╚════════════════════════════════════════════╝")
+        logger.info("")
+
     # ── 2. Amazon client ───────────────────────────────────
     from src.amazon.factory import create_amazon_client
 
@@ -187,10 +197,19 @@ async def main() -> None:  # noqa: C901 — orchestration function
     except Exception as exc:
         logger.debug("Startup notification failed (non-fatal): %s", exc)
 
-    # ── 8. Dashboard (blocks until shutdown) ──────────────
+    # ── 8. Security notifier ─────────────────────────────
+    from src.dashboard.notifications import SecurityNotifier
+
+    security_notifier = SecurityNotifier(bot_token=bot_token, repo=repo)
+
+    # ── 9. Dashboard (blocks until shutdown) ──────────────
     from src.dashboard.app import create_dashboard_app
 
-    app = create_dashboard_app(repo, scheduler, engine)
+    app = create_dashboard_app(
+        repo, scheduler, engine,
+        security_notifier=security_notifier,
+        app_settings=settings,
+    )
     config = uvicorn.Config(
         app,
         host="0.0.0.0",

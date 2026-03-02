@@ -33,6 +33,8 @@ def create_dashboard_app(
     repository: Repository,
     scheduler: PublishScheduler,
     engine: BotEngine,
+    security_notifier=None,
+    app_settings=None,
 ) -> FastAPI:
     """Create and configure the FastAPI dashboard application.
 
@@ -67,6 +69,8 @@ def create_dashboard_app(
     app.state.scheduler = scheduler
     app.state.engine = engine
     app.state.templates = templates
+    app.state.security_notifier = security_notifier
+    app.state.settings = app_settings
 
     # ── Include routers ─────────────────────────────────────
     from src.dashboard.routes.pages import router as pages_router
