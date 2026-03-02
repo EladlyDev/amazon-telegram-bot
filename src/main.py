@@ -219,12 +219,13 @@ async def main() -> None:  # noqa: C901 — orchestration function
         # ── Graceful shutdown ─────────────────────────────
         logger.info("Shutting down services...")
         scheduler.stop()
-        try:
-            admin_bot.stop()
-        except Exception:
-            pass
+        # Send shutdown notification BEFORE closing any connections
         try:
             await notifier.send_shutdown_notification()
+        except Exception as exc:
+            logger.debug("Shutdown notification failed: %s", exc)
+        try:
+            await admin_bot.stop()
         except Exception:
             pass
         try:
