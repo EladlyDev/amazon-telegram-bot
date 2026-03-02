@@ -139,7 +139,16 @@
         </nav>
 
         <!-- Bottom section -->
-        <div class="absolute bottom-0 left-0 right-0 p-3 border-t border-gray-700/50">
+        <div class="absolute bottom-0 left-0 right-0 p-3 border-t border-gray-700/50 space-y-1">
+            <a href="/account"
+                class="flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all duration-150
+                      {% if request.url.path == '/account' %}nav-active bg-indigo-500/10 text-white{% else %}hover:bg-gray-800 hover:text-white text-gray-400{% endif %}">
+                <svg class="nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+                        d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z" />
+                </svg>
+                <span>حسابي</span>
+            </a>
             <a href="/logout" class="flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium
                       text-gray-500 hover:text-red-400 hover:bg-gray-800 transition-all duration-150">
                 <svg class="nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -173,9 +182,10 @@
 
                 <div class="flex items-center gap-3 text-sm text-gray-500">
                     <div class="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center">
-                        <span class="text-indigo-600 font-bold text-xs">م</span>
+                        <span class="text-indigo-600 font-bold text-xs">{{ (user.display_name or user.username or
+                            'م')[0] }}</span>
                     </div>
-                    <span class="hidden sm:inline">مرحباً، المسؤول</span>
+                    <span class="hidden sm:inline">مرحباً، {{ user.display_name or user.username or 'المسؤول' }}</span>
                 </div>
             </div>
         </header>

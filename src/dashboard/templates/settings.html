@@ -13,6 +13,25 @@
 {% block content %}
 <div x-data="settingsPage()" x-init="loadSettings()" class="space-y-6 max-w-4xl">
 
+    <!-- OTP Status Banner -->
+    {% if otp_configured %}
+    <div class="bg-emerald-50 border border-emerald-200 rounded-2xl px-5 py-4 flex items-center gap-3">
+        <span class="text-lg">🔒</span>
+        <div>
+            <p class="text-sm font-bold text-emerald-700">الحماية مفعّلة</p>
+            <p class="text-xs text-emerald-600">الإعدادات الحساسة محمية برمز تحقق عبر تلقرام ({{ otp_target }})</p>
+        </div>
+    </div>
+    {% else %}
+    <div class="bg-amber-50 border border-amber-200 rounded-2xl px-5 py-4 flex items-center gap-3">
+        <span class="text-lg">⚠️</span>
+        <div>
+            <p class="text-sm font-bold text-amber-700">الحماية غير مفعّلة</p>
+            <p class="text-xs text-amber-600">معرّف تلقرام غير مضبوط — لتفعيل الحماية، اضبط «معرّف المسؤول» أدناه</p>
+        </div>
+    </div>
+    {% endif %}
+
     <!-- Loading -->
     <div x-show="loading" class="text-center py-16">
         <div class="spinner mx-auto mb-4" style="width:32px;height:32px;border-width:3px"></div>
@@ -22,7 +41,7 @@
     <template x-if="!loading && loaded">
         <div class="space-y-5">
 
-            <!-- Sections template macro via array -->
+            <!-- Sections -->
             <template x-for="section in sections" :key="section.key">
                 <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden"
                     x-data="{ open: true }">
@@ -47,14 +66,33 @@
                     </button>
                     <div x-show="open" x-collapse class="px-6 pb-6 space-y-5 border-t border-gray-50 pt-5">
                         <template x-for="s in (groups[section.key] || [])" :key="s.key">
-                            <div class="flex flex-col sm:flex-row sm:items-start gap-2 sm:gap-6">
+                            <div class="flex flex-col sm:flex-row sm:items-start gap-2 sm:gap-6"
+                                :class="{ 'border-r-2 border-amber-400 pr-4': s.sensitivity === 'sensitive', 'opacity-60': s.sensitivity === 'readonly' }">
                                 <div class="sm:w-1/3 shrink-0">
-                                    <label class="text-xs font-medium text-gray-700" x-text="getLabel(s.key)"></label>
+                                    <div class="flex items-center gap-2">
+                                        <label class="text-xs font-medium text-gray-700"
+                                            x-text="getLabel(s.key)"></label>
+                                        <template x-if="s.sensitivity === 'sensitive'">
+                                            <span
+                                                class="text-[9px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full font-medium">🔒
+                                                يتطلب تحقق</span>
+                                        </template>
+                                        <template x-if="s.sensitivity === 'readonly'">
+                                            <span
+                                                class="text-[9px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded-full font-medium">للعرض
+                                                فقط</span>
+                                        </template>
+                                    </div>
                                     <p class="text-[10px] text-gray-400 mt-0.5" x-text="s.description || ''"></p>
+                                    <!-- Special note for admin_chat_id -->
+                                    <template x-if="s.key === 'telegram.admin_chat_id'">
+                                        <p class="text-[10px] text-blue-500 mt-1">ℹ️ رمز التحقق يُرسل إلى المعرّف
+                                            الحالي. بعد التحديث، ستصل الرموز إلى المعرّف الجديد.</p>
+                                    </template>
                                 </div>
                                 <div class="flex-1">
                                     <!-- Read-only bool -->
-                                    <template x-if="isReadOnly(s.key) && s.value_type === 'bool'">
+                                    <template x-if="s.sensitivity === 'readonly' && s.value_type === 'bool'">
                                         <span class="text-sm inline-flex items-center gap-1.5"
                                             :class="values[s.key] ? 'text-emerald-600' : 'text-red-500'">
                                             <span class="w-2 h-2 rounded-full"
@@ -63,11 +101,11 @@
                                         </span>
                                     </template>
                                     <!-- Read-only non-bool -->
-                                    <template x-if="isReadOnly(s.key) && s.value_type !== 'bool'">
+                                    <template x-if="s.sensitivity === 'readonly' && s.value_type !== 'bool'">
                                         <span class="text-sm text-gray-600" x-text="values[s.key] || '—'"></span>
                                     </template>
                                     <!-- Editable bool toggle -->
-                                    <template x-if="!isReadOnly(s.key) && s.value_type === 'bool'">
+                                    <template x-if="s.sensitivity !== 'readonly' && s.value_type === 'bool'">
                                         <button type="button" @click="values[s.key] = !values[s.key]"
                                             class="w-10 h-6 rounded-full relative transition-colors duration-200"
                                             :class="values[s.key] ? 'bg-emerald-500' : 'bg-gray-300'">
@@ -77,17 +115,18 @@
                                         </button>
                                     </template>
                                     <!-- Editable string -->
-                                    <template x-if="!isReadOnly(s.key) && s.value_type === 'string'">
+                                    <template x-if="s.sensitivity !== 'readonly' && s.value_type === 'string'">
                                         <input type="text" x-model="values[s.key]" dir="auto"
-                                            class="w-full px-3 py-2 text-sm bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 focus:bg-white outline-none transition-all">
+                                            class="w-full px-3 py-2 text-sm bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 focus:bg-white outline-none transition-all"
+                                            :class="s.sensitivity === 'sensitive' && 'border-amber-200'">
                                     </template>
                                     <!-- Editable int -->
-                                    <template x-if="!isReadOnly(s.key) && s.value_type === 'int'">
+                                    <template x-if="s.sensitivity !== 'readonly' && s.value_type === 'int'">
                                         <input type="number" x-model.number="values[s.key]" step="1"
                                             class="w-full px-3 py-2 text-sm bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 focus:bg-white outline-none transition-all">
                                     </template>
                                     <!-- Editable float -->
-                                    <template x-if="!isReadOnly(s.key) && s.value_type === 'float'">
+                                    <template x-if="s.sensitivity !== 'readonly' && s.value_type === 'float'">
                                         <input type="number" x-model.number="values[s.key]" step="0.5" min="0.5"
                                             class="w-full px-3 py-2 text-sm bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 focus:bg-white outline-none transition-all">
                                     </template>
@@ -101,39 +140,105 @@
         </div>
     </template>
 
-    <!-- E) Save Bar -->
+    <!-- Save Bar -->
     <div x-show="hasChanges()" x-transition:enter="transition ease-out duration-200"
         x-transition:enter-start="opacity-0 translate-y-4" x-transition:enter-end="opacity-100 translate-y-0"
-        class="sticky bottom-6 bg-white rounded-2xl p-4 shadow-lg border border-gray-200 flex items-center justify-between flex-wrap gap-3"
+        class="sticky bottom-6 bg-white rounded-2xl p-4 shadow-lg border border-gray-200 flex flex-col gap-3"
         style="display:none">
-        <div class="text-sm text-gray-600 flex items-center gap-2">
-            <svg class="w-4 h-4 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
-                    d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
-            </svg>
-            <span class="text-indigo-600 font-bold" x-text="getChangedCount()"></span>
-            إعداد(ات) تم تعديلها
+        <!-- Sensitive warning -->
+        <div x-show="getSensitiveChangedCount() > 0"
+            class="bg-amber-50 rounded-xl px-4 py-2.5 text-xs text-amber-700 flex items-center gap-2">
+            <span>⚠️</span>
+            <span>تتضمن التغييرات <strong x-text="getSensitiveChangedCount()"></strong> إعداد(ات) حساسة — سيُطلب رمز
+                تحقق</span>
         </div>
-        <div class="flex gap-2">
-            <button @click="resetSettings()"
-                class="px-5 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-medium rounded-xl transition-colors flex items-center gap-1.5">
-                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <div class="flex items-center justify-between flex-wrap gap-3">
+            <div class="text-sm text-gray-600 flex items-center gap-2">
+                <svg class="w-4 h-4 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
-                        d="M9 15L3 9m0 0l6-6M3 9h12a6 6 0 010 12h-3" />
+                        d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
                 </svg>
-                إلغاء التغييرات
-            </button>
-            <button @click="saveSettings()" :disabled="saving"
-                class="px-6 py-2.5 bg-indigo-500 hover:bg-indigo-600 text-white text-sm font-bold rounded-xl shadow-sm transition-all disabled:opacity-50 flex items-center gap-2">
-                <span x-show="saving" class="spinner" style="width:14px;height:14px;border-width:2px"></span>
-                <span x-show="!saving">
-                    <svg class="w-4 h-4 inline -mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <span class="text-indigo-600 font-bold" x-text="getChangedCount()"></span>
+                إعداد(ات) تم تعديلها
+            </div>
+            <div class="flex gap-2">
+                <button @click="resetSettings()"
+                    class="px-5 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-medium rounded-xl transition-colors flex items-center gap-1.5">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
-                            d="M17.593 3.322c1.1.128 1.907 1.077 1.907 2.185V21L12 17.25 4.5 21V5.507c0-1.108.806-2.057 1.907-2.185a48.507 48.507 0 0111.186 0z" />
+                            d="M9 15L3 9m0 0l6-6M3 9h12a6 6 0 010 12h-3" />
                     </svg>
-                </span>
-                <span x-text="saving ? 'جارِ الحفظ...' : 'حفظ التغييرات'"></span>
-            </button>
+                    إلغاء التغييرات
+                </button>
+                <button @click="saveSettings()" :disabled="saving"
+                    class="px-6 py-2.5 bg-indigo-500 hover:bg-indigo-600 text-white text-sm font-bold rounded-xl shadow-sm transition-all disabled:opacity-50 flex items-center gap-2">
+                    <span x-show="saving" class="spinner" style="width:14px;height:14px;border-width:2px"></span>
+                    <span x-show="!saving">
+                        <svg class="w-4 h-4 inline -mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+                                d="M17.593 3.322c1.1.128 1.907 1.077 1.907 2.185V21L12 17.25 4.5 21V5.507c0-1.108.806-2.057 1.907-2.185a48.507 48.507 0 0111.186 0z" />
+                        </svg>
+                    </span>
+                    <span x-text="saving ? 'جارِ الحفظ...' : 'حفظ التغييرات'"></span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- OTP MODAL -->
+    <div x-show="showOtpModal" x-transition:enter="transition ease-out duration-200"
+        x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100"
+        class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" style="display:none"
+        @keydown.escape.window="cancelOtp()">
+
+        <div x-show="showOtpModal" x-transition:enter="transition ease-out duration-200"
+            x-transition:enter-start="opacity-0 scale-95" x-transition:enter-end="opacity-100 scale-100"
+            class="bg-white rounded-2xl shadow-2xl p-6 sm:p-8 w-full max-w-md" dir="rtl" @click.stop>
+
+            <h3 class="text-lg font-bold text-gray-800 mb-2">🔐 تأكيد التغييرات الحساسة</h3>
+
+            <!-- Pending changes list -->
+            <div class="bg-gray-50 rounded-xl p-4 mb-5 space-y-2 max-h-40 overflow-y-auto">
+                <template x-for="key in pendingSensitive" :key="key">
+                    <div class="text-xs text-gray-600 flex items-center gap-2">
+                        <span class="text-amber-500">•</span>
+                        <span class="font-medium" x-text="SENSITIVE_LABELS[key] || key"></span>
+                    </div>
+                </template>
+            </div>
+
+            <p class="text-sm text-gray-600 mb-5 flex items-center gap-2">
+                <span>📱</span> تم إرسال رمز التحقق إلى تلقرام
+            </p>
+
+            <!-- OTP inputs -->
+            <div id="settings-otp" class="flex gap-2 justify-center mb-4" dir="ltr">
+                <template x-for="i in 6" :key="i">
+                    <input :data-otp-index="i - 1" type="text" inputmode="numeric" maxlength="1"
+                        class="w-12 h-14 text-center text-xl font-bold border-2 border-gray-200 rounded-xl focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 outline-none transition-all">
+                </template>
+            </div>
+
+            <!-- Countdown -->
+            <p class="text-center text-xs text-gray-400 mb-5">
+                ⏰ ينتهي خلال <span class="font-mono font-bold text-gray-600" x-text="otpCountdown"></span>
+            </p>
+
+            <!-- Error -->
+            <p x-show="otpError" x-text="otpError" class="text-sm text-red-500 text-center mb-4" style="display:none">
+            </p>
+
+            <!-- Actions -->
+            <div class="flex gap-3">
+                <button @click="verifySettingsOtp()" :disabled="otpVerifying"
+                    class="flex-1 py-3 bg-indigo-500 hover:bg-indigo-600 text-white font-bold rounded-xl text-sm transition-colors disabled:opacity-50">
+                    <span x-text="otpVerifying ? 'جارِ التحقق...' : 'تأكيد'"></span>
+                </button>
+                <button @click="cancelOtp()"
+                    class="flex-1 py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium rounded-xl text-sm transition-colors">
+                    إلغاء
+                </button>
+            </div>
         </div>
     </div>
 
@@ -151,6 +256,14 @@
             loading: false,
             loaded: false,
             saving: false,
+
+            // OTP
+            showOtpModal: false,
+            pendingSensitive: [],
+            otpCountdown: '5:00',
+            otpError: '',
+            otpVerifying: false,
+            otpTimer: null,
 
             sections: [
                 {
@@ -190,19 +303,16 @@
                 'bot.last_publish_at': 'آخر نشر',
             },
 
-            readOnlyKeys: ['amazon.marketplace', 'bot.is_running', 'bot.total_published', 'bot.last_publish_at'],
-
             getLabel(key) { return this.labels[key] || key.split('.').pop(); },
-            isReadOnly(key) { return this.readOnlyKeys.includes(key); },
 
             async loadSettings() {
                 this.loading = true;
                 try {
                     const data = await apiCall('/api/settings');
-                    this.groups = data || {};
+                    this.groups = data.settings || {};
                     this.values = {};
                     this.allSettings = [];
-                    for (const [group, settings] of Object.entries(data || {})) {
+                    for (const [group, settings] of Object.entries(this.groups)) {
                         for (const s of settings) {
                             let val = s.value;
                             if (s.value_type === 'bool') val = val === 'true' || val === true;
@@ -222,9 +332,18 @@
 
             getChangedCount() {
                 let count = 0;
-                for (const key of Object.keys(this.values)) {
-                    if (this.isReadOnly(key)) continue;
-                    if (String(this.values[key]) !== String(this.originalValues[key])) count++;
+                for (const s of this.allSettings) {
+                    if (s.sensitivity === 'readonly') continue;
+                    if (String(this.values[s.key]) !== String(this.originalValues[s.key])) count++;
+                }
+                return count;
+            },
+
+            getSensitiveChangedCount() {
+                let count = 0;
+                for (const s of this.allSettings) {
+                    if (s.sensitivity !== 'sensitive') continue;
+                    if (String(this.values[s.key]) !== String(this.originalValues[s.key])) count++;
                 }
                 return count;
             },
@@ -233,15 +352,74 @@
                 this.saving = true;
                 try {
                     const changed = {};
-                    for (const key of Object.keys(this.values)) {
-                        if (this.isReadOnly(key)) continue;
-                        if (String(this.values[key]) !== String(this.originalValues[key])) changed[key] = this.values[key];
+                    for (const s of this.allSettings) {
+                        if (s.sensitivity === 'readonly') continue;
+                        if (String(this.values[s.key]) !== String(this.originalValues[s.key])) {
+                            changed[s.key] = String(this.values[s.key]);
+                        }
                     }
-                    await apiCall('/api/settings', 'PUT', changed);
-                    this.originalValues = JSON.parse(JSON.stringify(this.values));
-                    showToast('تم حفظ الإعدادات بنجاح', 'success');
+                    const result = await apiCall('/api/settings', 'PUT', changed);
+
+                    if (result.otp_required) {
+                        this.pendingSensitive = result.pending_sensitive || [];
+                        this.openOtpModal();
+                        // Update originals for normal changes only
+                        for (const key of Object.keys(changed)) {
+                            if (!this.pendingSensitive.includes(key)) {
+                                this.originalValues[key] = this.values[key];
+                            }
+                        }
+                    } else {
+                        this.originalValues = JSON.parse(JSON.stringify(this.values));
+                        showToast(result.warning || 'تم حفظ الإعدادات بنجاح', result.warning ? 'info' : 'success');
+                    }
                 } catch (e) { }
                 this.saving = false;
+            },
+
+            openOtpModal() {
+                this.showOtpModal = true;
+                this.otpError = '';
+                this.otpCountdown = '5:00';
+                this.$nextTick(() => {
+                    initOTPInputs('settings-otp', 6);
+                    clearOTPInputs('settings-otp', 6);
+                });
+                if (this.otpTimer) this.otpTimer.stop();
+                this.otpTimer = startCountdown(300,
+                    (s) => { this.otpCountdown = formatCountdown(s); },
+                    () => {
+                        this.otpError = 'انتهت صلاحية الرمز. أعد حفظ الإعدادات لإرسال رمز جديد.';
+                    }
+                );
+            },
+
+            async verifySettingsOtp() {
+                const code = getOTPValue('settings-otp', 6);
+                if (code.length !== 6) { this.otpError = 'أدخل الرمز المكوّن من 6 أرقام'; return; }
+                this.otpVerifying = true;
+                this.otpError = '';
+                try {
+                    await apiCall('/api/verify-otp', 'POST', { code, purpose: 'settings_change' });
+                    if (this.otpTimer) this.otpTimer.stop();
+                    this.showOtpModal = false;
+                    this.originalValues = JSON.parse(JSON.stringify(this.values));
+                    showToast('تم حفظ جميع الإعدادات بنجاح', 'success');
+                } catch (e) {
+                    this.otpError = 'رمز التحقق غير صحيح أو منتهي الصلاحية';
+                    clearOTPInputs('settings-otp', 6);
+                }
+                this.otpVerifying = false;
+            },
+
+            cancelOtp() {
+                if (this.otpTimer) this.otpTimer.stop();
+                this.showOtpModal = false;
+                // Revert sensitive changes
+                for (const key of this.pendingSensitive) {
+                    this.values[key] = this.originalValues[key];
+                }
+                showToast('الإعدادات العادية محفوظة. التغييرات الحساسة ملغاة.', 'info');
             },
 
             resetSettings() {

@@ -1,0 +1,378 @@
+{% extends "base.html" %}
+
+{% block title %}حسابي{% endblock %}
+{% block page_title %}
+<svg class="w-5 h-5 inline-block ml-1 -mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+        d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z" />
+</svg>
+حسابي
+{% endblock %}
+
+{% block content %}
+<div x-data="accountPage()" x-init="init()" class="space-y-6 max-w-4xl">
+
+    <!-- A) Profile Section -->
+    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+        <div class="px-6 py-4 border-b border-gray-50 flex items-center gap-2">
+            <span class="text-lg">👤</span>
+            <h3 class="font-bold text-sm text-gray-800">الملف الشخصي</h3>
+        </div>
+        <div class="px-6 py-5 space-y-4">
+            <div>
+                <label class="text-xs font-medium text-gray-700 mb-1.5 block">الاسم المعروض</label>
+                <input type="text" x-model="profile.display_name"
+                    class="w-full px-3 py-2.5 text-sm bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 focus:bg-white outline-none transition-all">
+            </div>
+            <div>
+                <label class="text-xs font-medium text-gray-700 mb-1.5 block">اسم المستخدم</label>
+                <input type="text" x-model="profile.username"
+                    class="w-full px-3 py-2.5 text-sm bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 focus:bg-white outline-none transition-all">
+                <p class="text-[10px] text-gray-400 mt-1">تغيير اسم المستخدم سيُسجّل في السجل ويُرسل إشعار عبر تلقرام.
+                </p>
+            </div>
+            <button @click="saveProfile()" :disabled="profileSaving"
+                class="px-6 py-2.5 bg-indigo-500 hover:bg-indigo-600 text-white text-sm font-bold rounded-xl shadow-sm transition-all disabled:opacity-50">
+                <span x-text="profileSaving ? 'جارِ الحفظ...' : 'حفظ الملف الشخصي'"></span>
+            </button>
+        </div>
+    </div>
+
+    <!-- B) Change Password -->
+    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+        <div class="px-6 py-4 border-b border-gray-50 flex items-center gap-2">
+            <span class="text-lg">🔒</span>
+            <h3 class="font-bold text-sm text-gray-800">تغيير كلمة المرور</h3>
+        </div>
+        <div class="px-6 py-5">
+
+            <!-- Step 1: Form -->
+            <div x-show="pwStep === 'form'" class="space-y-4">
+                <!-- Current password -->
+                <div>
+                    <label class="text-xs font-medium text-gray-700 mb-1.5 block">كلمة المرور الحالية</label>
+                    <div class="relative">
+                        <input :type="showCurrentPw ? 'text' : 'password'" x-model="pw.current"
+                            class="w-full px-3 py-2.5 pl-10 text-sm bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 focus:bg-white outline-none transition-all">
+                        <button type="button" @click="showCurrentPw = !showCurrentPw"
+                            class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path x-show="!showCurrentPw" stroke-linecap="round" stroke-linejoin="round"
+                                    stroke-width="1.5"
+                                    d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" />
+                                <path x-show="!showCurrentPw" stroke-linecap="round" stroke-linejoin="round"
+                                    stroke-width="1.5" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                <path x-show="showCurrentPw" stroke-linecap="round" stroke-linejoin="round"
+                                    stroke-width="1.5"
+                                    d="M3.98 8.223A10.477 10.477 0 001.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.45 10.45 0 0112 4.5c4.756 0 8.773 3.162 10.065 7.498a10.523 10.523 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.242 4.242L9.88 9.88" />
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- New password -->
+                <div>
+                    <label class="text-xs font-medium text-gray-700 mb-1.5 block">كلمة المرور الجديدة</label>
+                    <div class="relative">
+                        <input :type="showNewPw ? 'text' : 'password'" x-model="pw.new" @input="updateStrength()"
+                            class="w-full px-3 py-2.5 pl-10 text-sm bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 focus:bg-white outline-none transition-all">
+                        <button type="button" @click="showNewPw = !showNewPw"
+                            class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path x-show="!showNewPw" stroke-linecap="round" stroke-linejoin="round"
+                                    stroke-width="1.5"
+                                    d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" />
+                                <path x-show="!showNewPw" stroke-linecap="round" stroke-linejoin="round"
+                                    stroke-width="1.5" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                <path x-show="showNewPw" stroke-linecap="round" stroke-linejoin="round"
+                                    stroke-width="1.5"
+                                    d="M3.98 8.223A10.477 10.477 0 001.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.45 10.45 0 0112 4.5c4.756 0 8.773 3.162 10.065 7.498a10.523 10.523 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.242 4.242L9.88 9.88" />
+                            </svg>
+                        </button>
+                    </div>
+                    <!-- Strength indicator -->
+                    <div x-show="pw.new" class="mt-2">
+                        <div class="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                            <div class="h-full transition-all duration-300 rounded-full" :class="pwStrength.color"
+                                :style="`width: ${pwStrength.level}%`"></div>
+                        </div>
+                        <p class="text-[10px] mt-1"
+                            :class="pwStrength.level >= 75 ? 'text-emerald-600' : pwStrength.level >= 50 ? 'text-yellow-600' : 'text-red-500'"
+                            x-text="pwStrength.label"></p>
+                    </div>
+                </div>
+
+                <!-- Confirm password -->
+                <div>
+                    <label class="text-xs font-medium text-gray-700 mb-1.5 block">تأكيد كلمة المرور</label>
+                    <input type="password" x-model="pw.confirm"
+                        class="w-full px-3 py-2.5 text-sm bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 focus:bg-white outline-none transition-all">
+                    <p x-show="pw.confirm" class="text-[10px] mt-1"
+                        :class="pw.new === pw.confirm ? 'text-emerald-600' : 'text-red-500'">
+                        <span x-text="pw.new === pw.confirm ? '✅ متطابقة' : '❌ غير متطابقة'"></span>
+                    </p>
+                </div>
+
+                <button @click="requestPasswordChange()" :disabled="!canSubmitPw() || pwSubmitting"
+                    class="px-6 py-2.5 bg-indigo-500 hover:bg-indigo-600 text-white text-sm font-bold rounded-xl shadow-sm transition-all disabled:opacity-50">
+                    <span x-text="pwSubmitting ? 'جارِ الإرسال...' : 'تغيير كلمة المرور'"></span>
+                </button>
+            </div>
+
+            <!-- Step 2: OTP -->
+            <div x-show="pwStep === 'otp'" class="space-y-5">
+                <p class="text-sm text-gray-600 flex items-center gap-2">
+                    <span>📱</span> تم إرسال رمز التحقق إلى تلقرام
+                </p>
+
+                <div id="pw-otp" class="flex gap-2 justify-center" dir="ltr">
+                    <template x-for="i in 6" :key="i">
+                        <input :data-otp-index="i - 1" type="text" inputmode="numeric" maxlength="1"
+                            class="w-12 h-14 text-center text-xl font-bold border-2 border-gray-200 rounded-xl focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 outline-none transition-all">
+                    </template>
+                </div>
+
+                <p class="text-center text-xs text-gray-400">
+                    ⏰ ينتهي خلال <span class="font-mono font-bold text-gray-600" x-text="pwOtpCountdown"></span>
+                </p>
+
+                <p x-show="pwOtpError" x-text="pwOtpError" class="text-sm text-red-500 text-center"
+                    style="display:none"></p>
+
+                <div class="flex gap-3">
+                    <button @click="verifyPasswordOtp()" :disabled="pwOtpVerifying"
+                        class="flex-1 py-3 bg-indigo-500 hover:bg-indigo-600 text-white font-bold rounded-xl text-sm transition-colors disabled:opacity-50">
+                        <span x-text="pwOtpVerifying ? 'جارِ التحقق...' : 'تأكيد'"></span>
+                    </button>
+                    <button @click="pwStep = 'form'"
+                        class="flex-1 py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium rounded-xl text-sm transition-colors">
+                        رجوع
+                    </button>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <!-- C) Active Sessions -->
+    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+        <div class="px-6 py-4 border-b border-gray-50 flex items-center justify-between">
+            <div class="flex items-center gap-2">
+                <span class="text-lg">📱</span>
+                <h3 class="font-bold text-sm text-gray-800">الأجهزة المتصلة</h3>
+                <span class="text-[10px] bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full"
+                    x-text="sessions.length + ' جلسة'"></span>
+            </div>
+        </div>
+        <div class="divide-y divide-gray-50">
+            <template x-for="s in sessions" :key="s.full_id">
+                <div class="px-6 py-4 flex items-center justify-between"
+                    :class="s.is_current ? 'border-r-3 border-emerald-500 bg-emerald-50/30' : ''">
+                    <div class="space-y-1">
+                        <div class="flex items-center gap-2">
+                            <span class="text-xs font-medium text-gray-800"
+                                x-text="s.device_info || 'جهاز غير معروف'"></span>
+                            <template x-if="s.is_current">
+                                <span
+                                    class="text-[9px] bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded-full font-medium">الجلسة
+                                    الحالية</span>
+                            </template>
+                        </div>
+                        <div class="flex items-center gap-3 text-[10px] text-gray-400">
+                            <span>🌐 <span x-text="s.ip_address"></span></span>
+                            <span>⏰ <span x-text="timeAgo(s.last_active_at)"></span></span>
+                        </div>
+                    </div>
+                    <template x-if="!s.is_current">
+                        <button @click="revokeSession(s.full_id)"
+                            class="text-xs text-red-500 hover:text-red-700 hover:bg-red-50 px-3 py-1.5 rounded-lg transition-colors">
+                            إنهاء الجلسة
+                        </button>
+                    </template>
+                </div>
+            </template>
+        </div>
+        <!-- Revoke all others -->
+        <div class="px-6 py-4 border-t border-gray-100" x-show="sessions.filter(s => !s.is_current).length > 0">
+            <button @click="revokeOthers()"
+                class="w-full py-2.5 border border-red-200 text-red-500 hover:bg-red-50 text-sm font-medium rounded-xl transition-colors">
+                🚪 تسجيل الخروج من جميع الأجهزة الأخرى
+            </button>
+        </div>
+    </div>
+
+    <!-- D) Security Info -->
+    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+        <div class="px-6 py-4 border-b border-gray-50 flex items-center gap-2">
+            <span class="text-lg">🛡️</span>
+            <h3 class="font-bold text-sm text-gray-800">معلومات الأمان</h3>
+        </div>
+        <div class="px-6 py-5 space-y-3">
+            <div class="flex justify-between text-xs">
+                <span class="text-gray-500">آخر تسجيل دخول</span>
+                <span class="text-gray-700 font-medium">{{ db_user.last_login_at.strftime('%Y-%m-%d %H:%M') if
+                    db_user.last_login_at else '—' }}</span>
+            </div>
+            <div class="flex justify-between text-xs">
+                <span class="text-gray-500">آخر IP</span>
+                <span class="text-gray-700 font-medium font-mono">{{ db_user.last_login_ip or '—' }}</span>
+            </div>
+            <div class="flex justify-between text-xs">
+                <span class="text-gray-500">حالة الحساب</span>
+                <span class="font-medium {% if db_user.is_active %}text-emerald-600{% else %}text-red-500{% endif %}">
+                    {% if db_user.is_active %}🟢 نشط{% else %}🔴 مقفل{% endif %}
+                </span>
+            </div>
+            {% if otp_configured %}
+            <div class="flex justify-between text-xs">
+                <span class="text-gray-500">حماية OTP</span>
+                <span class="text-emerald-600 font-medium">🔒 مفعّلة</span>
+            </div>
+            {% endif %}
+            <p class="text-[10px] text-gray-400 pt-2 border-t border-gray-50">
+                مفتاح الاسترداد تم إنشاؤه عند إعداد الحساب. إذا فقدته، لا يمكن استرداده.
+            </p>
+        </div>
+    </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    function accountPage() {
+        return {
+            // Profile
+            profile: {
+                display_name: '{{ db_user.display_name or "" }}',
+                username: '{{ db_user.username }}',
+            },
+            originalUsername: '{{ db_user.username }}',
+            profileSaving: false,
+
+            // Password
+            pw: { current: '', new: '', confirm: '' },
+            pwStrength: { level: 0, label: '', color: 'bg-gray-200' },
+            showCurrentPw: false,
+            showNewPw: false,
+            pwStep: 'form',
+            pwSubmitting: false,
+            pwOtpCountdown: '5:00',
+            pwOtpError: '',
+            pwOtpVerifying: false,
+            pwOtpTimer: null,
+
+            // Sessions
+            sessions: [],
+
+            init() {
+                this.loadSessions();
+            },
+
+            // ── Profile ──
+            async saveProfile() {
+                this.profileSaving = true;
+                try {
+                    const data = {};
+                    if (this.profile.display_name) data.display_name = this.profile.display_name;
+                    if (this.profile.username !== this.originalUsername) data.username = this.profile.username;
+
+                    const result = await apiCall('/api/account/profile', 'PUT', data);
+                    this.originalUsername = result.user?.username || this.profile.username;
+                    showToast('تم حفظ الملف الشخصي', 'success');
+                } catch (e) { }
+                this.profileSaving = false;
+            },
+
+            // ── Password ──
+            updateStrength() {
+                this.pwStrength = getPasswordStrength(this.pw.new);
+            },
+
+            canSubmitPw() {
+                return this.pw.current &&
+                    this.pw.new.length >= 8 &&
+                    this.pw.new === this.pw.confirm &&
+                    this.pw.new !== this.pw.current;
+            },
+
+            async requestPasswordChange() {
+                this.pwSubmitting = true;
+                try {
+                    const result = await apiCall('/api/account/request-password-change', 'POST', {
+                        current_password: this.pw.current,
+                        new_password: this.pw.new,
+                        confirm_password: this.pw.confirm,
+                    });
+
+                    if (result.otp_required) {
+                        this.pwStep = 'otp';
+                        this.pwOtpError = '';
+                        this.pwOtpCountdown = '5:00';
+                        this.$nextTick(() => {
+                            initOTPInputs('pw-otp', 6);
+                            clearOTPInputs('pw-otp', 6);
+                        });
+                        if (this.pwOtpTimer) this.pwOtpTimer.stop();
+                        this.pwOtpTimer = startCountdown(300,
+                            (s) => { this.pwOtpCountdown = formatCountdown(s); },
+                            () => { this.pwOtpError = 'انتهت صلاحية الرمز'; }
+                        );
+                    } else {
+                        this.pw = { current: '', new: '', confirm: '' };
+                        this.pwStrength = { level: 0, label: '', color: 'bg-gray-200' };
+                        showToast(result.message || 'تم تغيير كلمة المرور بنجاح', 'success');
+                    }
+                } catch (e) { }
+                this.pwSubmitting = false;
+            },
+
+            async verifyPasswordOtp() {
+                const code = getOTPValue('pw-otp', 6);
+                if (code.length !== 6) { this.pwOtpError = 'أدخل الرمز المكوّن من 6 أرقام'; return; }
+                this.pwOtpVerifying = true;
+                this.pwOtpError = '';
+                try {
+                    await apiCall('/api/verify-otp', 'POST', { code, purpose: 'password_change' });
+                    if (this.pwOtpTimer) this.pwOtpTimer.stop();
+                    this.pwStep = 'form';
+                    this.pw = { current: '', new: '', confirm: '' };
+                    this.pwStrength = { level: 0, label: '', color: 'bg-gray-200' };
+                    showToast('تم تغيير كلمة المرور بنجاح', 'success');
+                } catch (e) {
+                    this.pwOtpError = 'رمز التحقق غير صحيح أو منتهي الصلاحية';
+                    clearOTPInputs('pw-otp', 6);
+                }
+                this.pwOtpVerifying = false;
+            },
+
+            // ── Sessions ──
+            async loadSessions() {
+                try {
+                    this.sessions = await apiCall('/api/account/sessions');
+                } catch (e) { }
+            },
+
+            async revokeSession(id) {
+                const ok = await confirmAction('هل تريد إنهاء هذه الجلسة؟');
+                if (!ok) return;
+                try {
+                    await apiCall(`/api/account/sessions/revoke/${id}`, 'POST');
+                    showToast('تم إنهاء الجلسة', 'success');
+                    await this.loadSessions();
+                } catch (e) { }
+            },
+
+            async revokeOthers() {
+                const ok = await confirmAction('هل تريد إنهاء جميع الجلسات الأخرى؟');
+                if (!ok) return;
+                try {
+                    const result = await apiCall('/api/account/sessions/revoke-others', 'POST');
+                    showToast(`تم إنهاء ${result.revoked_count} جلسة`, 'success');
+                    await this.loadSessions();
+                } catch (e) { }
+            },
+        };
+    }
+</script>
+{% endblock %}
