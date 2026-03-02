@@ -1,6 +1,6 @@
 """REST API endpoints — JSON responses consumed by the dashboard frontend.
 
-All endpoints require authentication via the session cookie.
+All endpoints require authentication via the session cookie unless noted.
 Access shared services through ``request.app.state``.
 """
 
@@ -11,10 +11,26 @@ import logging
 from datetime import datetime
 from typing import Any
 
+import telegram
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from starlette.status import HTTP_404_NOT_FOUND, HTTP_500_INTERNAL_SERVER_ERROR
 
+from src.dashboard.auth import (
+    SESSION_COOKIE_NAME,
+    get_client_ip,
+    session_signer,
+    verify_password,
+)
 from src.dashboard.deps import get_current_user
+from src.dashboard.otp_store import pending_changes
+from src.dashboard.rate_limit import recovery_limiter
+from src.dashboard.security import (
+    classify_setting,
+    format_change_confirmation,
+    format_otp_message,
+    get_otp_chat_id,
+    separate_changes,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -65,6 +81,35 @@ def _serialize(obj: Any) -> Any:
 def _error(message: str, status_code: int = 400) -> dict:
     """Return a standardised error dict."""
     raise HTTPException(status_code=status_code, detail=message)
+
+
+# ────────────────────────────────────────────────────────────
+#  HEALTH
+# ────────────────────────────────────────────────────────────
+
+
+@router.get("/health")
+async def health():
+    """Minimal health check (no auth required)."""
+    return {"status": "ok"}
+
+
+@router.get("/health/full")
+async def health_full(
+    request: Request,
+    _user: dict = Depends(get_current_user),
+):
+    """Detailed health info (requires auth)."""
+    repo = request.app.state.repo
+    scheduler = request.app.state.scheduler
+    stats = await repo.get_dashboard_stats()
+    return {
+        "status": "ok",
+        "bot_running": stats.get("bot_is_running", False),
+        "scheduler_running": scheduler.is_running,
+        "total_published": stats.get("total_published", 0),
+        "today_count": stats.get("today_count", 0),
+    }
 
 
 # ────────────────────────────────────────────────────────────
@@ -415,7 +460,7 @@ async def preview_template(
 
 
 # ────────────────────────────────────────────────────────────
-#  SETTINGS
+#  SETTINGS (with OTP protection for sensitive changes)
 # ────────────────────────────────────────────────────────────
 
 
@@ -424,32 +469,485 @@ async def get_settings(
     request: Request,
     _user: dict = Depends(get_current_user),
 ):
-    """Return all settings grouped by group_name."""
+    """Return all settings grouped by group_name, each with sensitivity info."""
     repo = request.app.state.repo
     all_settings = await repo.get_all_settings()
 
     grouped: dict[str, list] = {}
     for s in all_settings:
         group = s.group_name or "general"
-        grouped.setdefault(group, []).append(_serialize(s))
+        data = _serialize(s)
+        data["sensitivity"] = classify_setting(s.key)
+        grouped.setdefault(group, []).append(data)
 
-    return grouped
+    otp_chat_id = await get_otp_chat_id(repo)
+    return {
+        "settings": grouped,
+        "otp_configured": bool(otp_chat_id),
+        "otp_target": (otp_chat_id[:4] + "***") if otp_chat_id else None,
+    }
 
 
 @router.put("/settings")
 async def update_settings(
     request: Request,
-    _user: dict = Depends(get_current_user),
+    user: dict = Depends(get_current_user),
 ):
-    """Bulk-update settings from a key→value mapping."""
+    """Smart save: normal settings immediately, sensitive via OTP."""
     repo = request.app.state.repo
+    notifier = getattr(request.app.state, "security_notifier", None)
     body = await request.json()
-    await repo.update_settings_bulk(body)
-    await repo.log_event(
-        "INFO", "dashboard", "settings_updated",
-        f"Updated {len(body)} settings.",
+
+    # Build current values
+    all_settings = await repo.get_all_settings()
+    current_values = {s.key: s.value for s in all_settings}
+
+    normal_changes, sensitive_changes = separate_changes(current_values, body)
+
+    # Save normal changes immediately
+    if normal_changes:
+        await repo.update_settings_bulk(normal_changes)
+        await repo.log_event(
+            "INFO", "dashboard", "settings_updated",
+            f"Updated {len(normal_changes)} normal settings.",
+        )
+
+    # If no sensitive changes, done
+    if not sensitive_changes:
+        return {"status": "ok", "saved": len(normal_changes)}
+
+    # ── Sensitive changes need OTP ──────────────────────────
+    otp_chat_id = await get_otp_chat_id(repo)
+
+    # First-run: no admin chat ID configured → save directly
+    if not otp_chat_id:
+        await repo.update_settings_bulk(sensitive_changes)
+        if notifier:
+            await notifier.on_sensitive_settings_changed(
+                sensitive_changes, current_values, user["username"], False
+            )
+        await repo.log_event(
+            "WARNING", "security", "settings_sensitive_no_otp",
+            f"Saved {len(sensitive_changes)} sensitive settings without OTP (no admin chat ID).",
+        )
+        return {
+            "status": "ok",
+            "saved": len(normal_changes) + len(sensitive_changes),
+            "warning": "تم حفظ الإعدادات الحساسة بدون رمز تحقق (لم يتم تعيين معرّف المسؤول)",
+        }
+
+    # Store pending + generate OTP
+    pending_changes.store_settings_change(
+        user["user_id"], sensitive_changes, current_values
     )
+    code = await repo.create_otp(user["user_id"], "settings_change")
+
+    # Send OTP via Telegram
+    otp_sent = False
+    try:
+        bot_token = getattr(request.app.state, "settings", None)
+        token = bot_token.telegram_bot_token if bot_token else ""
+        if token:
+            bot = telegram.Bot(token=token)
+            msg = format_otp_message(code, sensitive_changes, current_values)
+            await bot.send_message(
+                chat_id=otp_chat_id,
+                text=msg,
+                parse_mode=telegram.constants.ParseMode.HTML,
+            )
+            otp_sent = True
+    except Exception as exc:
+        logger.error("Failed to send settings OTP: %s", exc)
+
+    if notifier:
+        await notifier.on_otp_requested(user["username"], "settings_change")
+
+    if not otp_sent:
+        # Telegram failed → save directly with warning
+        pending_changes.retrieve(user["user_id"], "settings_change")  # consume
+        await repo.update_settings_bulk(sensitive_changes)
+        if notifier:
+            await notifier.on_sensitive_settings_changed(
+                sensitive_changes, current_values, user["username"], False
+            )
+        await repo.log_event(
+            "WARNING", "security", "settings_otp_send_failed",
+            "Saved sensitive settings directly — OTP delivery failed.",
+        )
+        return {
+            "status": "ok",
+            "saved": len(normal_changes) + len(sensitive_changes),
+            "warning": "تعذر إرسال رمز التحقق — تم حفظ الإعدادات مباشرة",
+        }
+
+    return {
+        "status": "otp_required",
+        "otp_required": True,
+        "saved_normal": len(normal_changes),
+        "pending_sensitive": list(sensitive_changes.keys()),
+    }
+
+
+# ────────────────────────────────────────────────────────────
+#  UNIVERSAL OTP VERIFICATION
+# ────────────────────────────────────────────────────────────
+
+
+@router.post("/verify-otp")
+async def verify_otp(
+    request: Request,
+    user: dict = Depends(get_current_user),
+):
+    """Verify an OTP and apply the pending change."""
+    repo = request.app.state.repo
+    notifier = getattr(request.app.state, "security_notifier", None)
+    body = await request.json()
+
+    code = body.get("code", "").strip()
+    purpose = body.get("purpose", "").strip()
+
+    if not code or not purpose:
+        raise HTTPException(status_code=400, detail="الرمز والغرض مطلوبان")
+
+    # Verify OTP in DB
+    valid = await repo.verify_otp(user["user_id"], code, purpose)
+    if not valid:
+        raise HTTPException(status_code=400, detail="رمز التحقق غير صحيح أو منتهي الصلاحية")
+
+    # Retrieve pending change
+    pending = pending_changes.retrieve(user["user_id"], purpose)
+    if not pending:
+        raise HTTPException(
+            status_code=400,
+            detail="لا توجد تغييرات معلقة أو انتهت صلاحيتها",
+        )
+
+    # ── Apply based on purpose ──────────────────────────────
+    if purpose == "settings_change":
+        changes = pending["changes"]
+        old_values = pending["current_values"]
+        await repo.update_settings_bulk(changes)
+
+        if notifier:
+            await notifier.on_sensitive_settings_changed(
+                changes, old_values, user["username"], True
+            )
+            # Special: admin chat ID changed
+            if "telegram.admin_chat_id" in changes:
+                old_id = old_values.get("telegram.admin_chat_id", "")
+                new_id = changes["telegram.admin_chat_id"]
+                await notifier.on_admin_chat_id_changed(
+                    old_id, new_id, user["username"]
+                )
+
+        await repo.log_event(
+            "WARNING", "security", "settings_sensitive_changed",
+            f"Sensitive settings changed via OTP by {user['username']}: "
+            + ", ".join(changes.keys()),
+        )
+        return {"status": "ok", "message": "تم حفظ الإعدادات بنجاح"}
+
+    elif purpose == "password_change":
+        new_password = pending["new_password"]
+        await repo.update_user_password(user["user_id"], new_password)
+        if notifier:
+            await notifier.on_password_changed(user["username"], "dashboard")
+        await repo.log_event(
+            "WARNING", "security", "password_changed",
+            f"Password changed via OTP by {user['username']}.",
+        )
+        return {"status": "ok", "message": "تم تغيير كلمة المرور بنجاح"}
+
+    elif purpose == "username_change":
+        new_username = pending["new_username"]
+        try:
+            await repo.update_user_profile(
+                user["user_id"], {"username": new_username}
+            )
+        except ValueError:
+            raise HTTPException(status_code=400, detail="اسم المستخدم مستخدم بالفعل")
+        await repo.log_event(
+            "INFO", "security", "username_changed",
+            f"Username changed from {user['username']} to {new_username}.",
+        )
+        return {"status": "ok", "message": "تم تغيير اسم المستخدم بنجاح"}
+
+    raise HTTPException(status_code=400, detail="نوع العملية غير معروف")
+
+
+# ────────────────────────────────────────────────────────────
+#  ACCOUNT
+# ────────────────────────────────────────────────────────────
+
+
+@router.post("/account/request-password-change")
+async def request_password_change(
+    request: Request,
+    user: dict = Depends(get_current_user),
+):
+    """Request a password change (may require OTP)."""
+    repo = request.app.state.repo
+    notifier = getattr(request.app.state, "security_notifier", None)
+    body = await request.json()
+
+    current_password = body.get("current_password", "")
+    new_password = body.get("new_password", "")
+    confirm_password = body.get("confirm_password", "")
+
+    # Validate
+    db_user = await repo.get_user_by_id(user["user_id"])
+    if db_user is None:
+        raise HTTPException(status_code=400, detail="المستخدم غير موجود")
+
+    if not verify_password(current_password, db_user.password_hash):
+        raise HTTPException(status_code=400, detail="كلمة المرور الحالية غير صحيحة")
+
+    if len(new_password) < 8:
+        raise HTTPException(
+            status_code=400,
+            detail="كلمة المرور الجديدة يجب أن تكون 8 أحرف على الأقل",
+        )
+
+    if new_password == current_password:
+        raise HTTPException(
+            status_code=400,
+            detail="كلمة المرور الجديدة يجب أن تكون مختلفة عن الحالية",
+        )
+
+    if new_password != confirm_password:
+        raise HTTPException(status_code=400, detail="كلمتا المرور غير متطابقتين")
+
+    # OTP flow
+    otp_chat_id = await get_otp_chat_id(repo)
+
+    if not otp_chat_id:
+        # No OTP configured → change directly
+        await repo.update_user_password(user["user_id"], new_password)
+        if notifier:
+            await notifier.on_password_changed(user["username"], "dashboard_no_otp")
+        await repo.log_event(
+            "WARNING", "security", "password_changed_no_otp",
+            f"Password changed without OTP by {user['username']}.",
+        )
+        return {"status": "ok", "message": "تم تغيير كلمة المرور بنجاح"}
+
+    # Store pending + send OTP
+    pending_changes.store_password_change(user["user_id"], new_password)
+    code = await repo.create_otp(user["user_id"], "password_change")
+
+    otp_sent = False
+    try:
+        bot_token = getattr(request.app.state, "settings", None)
+        token = bot_token.telegram_bot_token if bot_token else ""
+        if token:
+            bot = telegram.Bot(token=token)
+            await bot.send_message(
+                chat_id=otp_chat_id,
+                text=(
+                    "🔐 <b>رمز التحقق لتغيير كلمة المرور</b>\n\n"
+                    f"🔑 الرمز: <code>{code}</code>\n\n"
+                    "⏰ صالح لمدة 5 دقائق\n"
+                    "⚠️ لا تشارك هذا الرمز مع أي شخص."
+                ),
+                parse_mode=telegram.constants.ParseMode.HTML,
+            )
+            otp_sent = True
+    except Exception as exc:
+        logger.error("Failed to send password OTP: %s", exc)
+
+    if notifier:
+        await notifier.on_otp_requested(user["username"], "password_change")
+
+    if not otp_sent:
+        # Telegram failed → change directly
+        pending_changes.retrieve(user["user_id"], "password_change")  # consume
+        await repo.update_user_password(user["user_id"], new_password)
+        if notifier:
+            await notifier.on_password_changed(user["username"], "dashboard_no_otp")
+        await repo.log_event(
+            "WARNING", "security", "password_otp_failed",
+            "Changed password directly — OTP delivery failed.",
+        )
+        return {
+            "status": "ok",
+            "message": "تم تغيير كلمة المرور بنجاح",
+            "warning": "تعذر إرسال رمز التحقق",
+        }
+
+    return {"status": "otp_required", "otp_required": True}
+
+
+@router.put("/account/profile")
+async def update_profile(
+    request: Request,
+    user: dict = Depends(get_current_user),
+):
+    """Update display name and/or username."""
+    repo = request.app.state.repo
+    notifier = getattr(request.app.state, "security_notifier", None)
+    body = await request.json()
+
+    update_data: dict[str, str] = {}
+
+    if "display_name" in body:
+        update_data["display_name"] = body["display_name"].strip()
+
+    new_username = body.get("username", "").strip()
+    if new_username and new_username != user["username"]:
+        # Username change — allow directly but notify
+        update_data["username"] = new_username
+
+    if not update_data:
+        return {"status": "ok", "message": "لا توجد تغييرات"}
+
+    try:
+        updated = await repo.update_user_profile(user["user_id"], update_data)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="اسم المستخدم مستخدم بالفعل")
+
+    if updated is None:
+        raise HTTPException(status_code=400, detail="المستخدم غير موجود")
+
+    if "username" in update_data:
+        await repo.log_event(
+            "INFO", "security", "username_changed",
+            f"Username changed: {user['username']} → {update_data['username']}",
+        )
+
+    return {
+        "status": "ok",
+        "user": {
+            "username": updated.username,
+            "display_name": updated.display_name,
+        },
+    }
+
+
+# ────────────────────────────────────────────────────────────
+#  SESSIONS
+# ────────────────────────────────────────────────────────────
+
+
+@router.get("/account/sessions")
+async def get_sessions(
+    request: Request,
+    user: dict = Depends(get_current_user),
+):
+    """Return active sessions for the current user."""
+    repo = request.app.state.repo
+    sessions = await repo.get_user_active_sessions(user["user_id"])
+
+    return [
+        {
+            "id": s.id[:8] + "...",
+            "full_id": s.id,
+            "ip_address": s.ip_address,
+            "device_info": s.device_info,
+            "is_current": s.id == user["session_id"],
+            "created_at": s.created_at.isoformat() if s.created_at else None,
+            "last_active_at": s.last_active_at.isoformat() if s.last_active_at else None,
+        }
+        for s in sessions
+    ]
+
+
+@router.post("/account/sessions/revoke-others")
+async def revoke_other_sessions(
+    request: Request,
+    user: dict = Depends(get_current_user),
+):
+    """Deactivate all sessions except the current one."""
+    repo = request.app.state.repo
+    notifier = getattr(request.app.state, "security_notifier", None)
+
+    count = await repo.deactivate_other_sessions(
+        user["user_id"], user["session_id"]
+    )
+
+    if notifier and count > 0:
+        await notifier.on_sessions_revoked(user["username"], count)
+
+    return {"status": "ok", "revoked_count": count}
+
+
+@router.post("/account/sessions/revoke/{session_id}")
+async def revoke_session(
+    session_id: str,
+    request: Request,
+    user: dict = Depends(get_current_user),
+):
+    """Deactivate a specific session (cannot revoke current)."""
+    if session_id == user["session_id"]:
+        raise HTTPException(
+            status_code=400,
+            detail="لا يمكنك إنهاء جلستك الحالية. استخدم تسجيل الخروج.",
+        )
+
+    repo = request.app.state.repo
+    await repo.deactivate_session(session_id)
     return {"status": "ok"}
+
+
+# ────────────────────────────────────────────────────────────
+#  RECOVERY (no auth required)
+# ────────────────────────────────────────────────────────────
+
+
+@router.post("/recover")
+async def recover_account(request: Request):
+    """Reset password using recovery key (no auth required)."""
+    repo = request.app.state.repo
+    notifier = getattr(request.app.state, "security_notifier", None)
+    ip = get_client_ip(request)
+
+    # Rate limit
+    if await recovery_limiter.is_rate_limited(ip, 3, 3600):
+        raise HTTPException(
+            status_code=429,
+            detail="تم تجاوز عدد المحاولات. حاول بعد ساعة.",
+        )
+
+    body = await request.json()
+    username = body.get("username", "").strip()
+    recovery_key = body.get("recovery_key", "").strip()
+    new_password = body.get("new_password", "")
+    confirm_password = body.get("confirm_password", "")
+
+    # Validate
+    if len(new_password) < 8:
+        raise HTTPException(
+            status_code=400,
+            detail="كلمة المرور يجب أن تكون 8 أحرف على الأقل",
+        )
+
+    if new_password != confirm_password:
+        raise HTTPException(status_code=400, detail="كلمتا المرور غير متطابقتين")
+
+    # Verify recovery key
+    db_user = await repo.verify_recovery_key(username, recovery_key)
+
+    if db_user is None:
+        if notifier:
+            await notifier.on_recovery_attempt(username, ip, False)
+        await repo.log_event(
+            "WARNING", "security", "recovery_failed",
+            f"Failed recovery attempt for '{username}' from {ip}.",
+        )
+        raise HTTPException(status_code=400, detail="البيانات غير صحيحة")
+
+    # Reset
+    await repo.reset_user_via_recovery(db_user.id, new_password)
+    await repo.deactivate_all_sessions(db_user.id)
+
+    if notifier:
+        await notifier.on_recovery_attempt(username, ip, True)
+
+    await repo.log_event(
+        "WARNING", "security", "recovery_success",
+        f"Account '{username}' recovered from {ip}. All sessions revoked.",
+    )
+
+    return {"status": "ok", "message": "تم إعادة تعيين كلمة المرور بنجاح. يمكنك تسجيل الدخول الآن."}
 
 
 # ────────────────────────────────────────────────────────────

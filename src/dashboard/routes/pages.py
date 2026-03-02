@@ -8,13 +8,16 @@ from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from starlette.status import HTTP_303_SEE_OTHER
 
-from src.config import settings
 from src.dashboard.auth import (
+    LOCKOUT_THRESHOLD,
     SESSION_COOKIE_NAME,
-    session_manager,
+    get_client_ip,
+    session_signer,
     verify_password,
 )
 from src.dashboard.deps import get_current_user
+from src.dashboard.rate_limit import login_limiter
+from src.dashboard.security import get_otp_chat_id
 
 logger = logging.getLogger(__name__)
 
@@ -30,8 +33,13 @@ router = APIRouter(tags=["pages"])
 async def login_page(request: Request):
     """Render the login page. Redirects to ``/`` if already authenticated."""
     token = request.cookies.get(SESSION_COOKIE_NAME)
-    if token and session_manager.verify_session(token):
-        return RedirectResponse(url="/", status_code=HTTP_303_SEE_OTHER)
+    if token:
+        session_id = session_signer.unsign_session_id(token)
+        if session_id:
+            repo = request.app.state.repo
+            session = await repo.get_session_by_id(session_id)
+            if session is not None:
+                return RedirectResponse(url="/", status_code=HTTP_303_SEE_OTHER)
 
     templates = request.app.state.templates
     return templates.TemplateResponse("login.html", {"request": request})
@@ -43,41 +51,82 @@ async def login_submit(
     username: str = Form(...),
     password: str = Form(...),
 ):
-    """Process login form submission."""
+    """Process login form submission with rate limiting and lockout."""
     templates = request.app.state.templates
+    repo = request.app.state.repo
+    ip = get_client_ip(request)
+    notifier = getattr(request.app.state, "security_notifier", None)
 
-    if (
-        username == settings.dashboard_username
-        and verify_password(password, settings.dashboard_password)
-    ):
-        # Create session and set cookie
-        token = session_manager.create_session(username)
-        response = RedirectResponse(url="/", status_code=HTTP_303_SEE_OTHER)
-        response.set_cookie(
-            key=SESSION_COOKIE_NAME,
-            value=token,
-            httponly=True,
-            samesite="lax",
-            max_age=86400,
+    def _error(msg: str):
+        return templates.TemplateResponse(
+            "login.html", {"request": request, "error": msg}
         )
-        logger.info("User '%s' logged in.", username)
-        return response
 
-    # Invalid credentials
-    return templates.TemplateResponse(
-        "login.html",
-        {
-            "request": request,
-            "error": "اسم المستخدم أو كلمة المرور غير صحيحة",
-        },
+    # Rate limit
+    if await login_limiter.is_rate_limited(ip, 10, 300):
+        return _error("تم تجاوز عدد المحاولات. حاول بعد 5 دقائق")
+
+    # Lockout check
+    if await repo.is_user_locked(username):
+        return _error("تم قفل الحساب مؤقتاً. حاول بعد 15 دقيقة")
+
+    # User lookup
+    user = await repo.get_user_by_username(username)
+    if user is None or not user.is_active:
+        await repo.record_login_failure(username)
+        return _error("اسم المستخدم أو كلمة المرور غير صحيحة")
+
+    # Password verification
+    if not verify_password(password, user.password_hash):
+        attempt_count = await repo.record_login_failure(username)
+        if notifier:
+            if attempt_count >= LOCKOUT_THRESHOLD:
+                await notifier.on_account_locked(username, ip)
+            elif attempt_count >= 3:
+                await notifier.on_login_failed(username, ip, attempt_count)
+        return _error("اسم المستخدم أو كلمة المرور غير صحيحة")
+
+    # ── Success ─────────────────────────────────────────────
+    await repo.record_login_success(user.id, ip)
+
+    ua = request.headers.get("user-agent", "")
+    session = await repo.create_session(user.id, ip, ua)
+    signed = session_signer.sign_session_id(session.id)
+
+    response = RedirectResponse(url="/", status_code=HTTP_303_SEE_OTHER)
+    is_https = request.headers.get("x-forwarded-proto") == "https"
+    response.set_cookie(
+        key=SESSION_COOKIE_NAME,
+        value=signed,
+        httponly=True,
+        samesite="lax",
+        max_age=86400,
+        secure=is_https,
+        path="/",
     )
+
+    if notifier:
+        is_new = await repo.is_new_ip_for_user(user.id, ip)
+        await notifier.on_login_success(
+            user.username, ip, session.device_info or "", is_new
+        )
+
+    logger.info("User '%s' logged in from %s.", username, ip)
+    return response
 
 
 @router.get("/logout")
-async def logout():
-    """Delete the session cookie and redirect to login."""
+async def logout(request: Request):
+    """Deactivate the session and redirect to login."""
+    token = request.cookies.get(SESSION_COOKIE_NAME)
+    if token:
+        session_id = session_signer.unsign_session_id(token)
+        if session_id:
+            repo = request.app.state.repo
+            await repo.deactivate_session(session_id)
+
     response = RedirectResponse(url="/login", status_code=HTTP_303_SEE_OTHER)
-    response.delete_cookie(key=SESSION_COOKIE_NAME)
+    response.delete_cookie(key=SESSION_COOKIE_NAME, path="/")
     return response
 
 
@@ -92,9 +141,6 @@ async def dashboard_home(
     user: dict = Depends(get_current_user),
 ):
     """Main dashboard overview page."""
-    import json as _json
-    from datetime import datetime as _dt, timedelta as _td
-
     repo = request.app.state.repo
     scheduler = request.app.state.scheduler
 
@@ -228,7 +274,7 @@ async def settings_page(
     request: Request,
     user: dict = Depends(get_current_user),
 ):
-    """Bot settings page."""
+    """Bot settings page with OTP status."""
     repo = request.app.state.repo
     all_settings = await repo.get_all_settings()
 
@@ -238,6 +284,10 @@ async def settings_page(
         group = s.group_name or "general"
         grouped.setdefault(group, []).append(s)
 
+    otp_chat_id = await get_otp_chat_id(repo)
+    otp_configured = bool(otp_chat_id)
+    otp_target = (otp_chat_id[:4] + "***") if otp_chat_id else None
+
     templates = request.app.state.templates
     return templates.TemplateResponse(
         "settings.html",
@@ -245,5 +295,40 @@ async def settings_page(
             "request": request,
             "user": user,
             "settings_groups": grouped,
+            "otp_configured": otp_configured,
+            "otp_target": otp_target,
         },
     )
+
+
+@router.get("/account", response_class=HTMLResponse)
+async def account_page(
+    request: Request,
+    user: dict = Depends(get_current_user),
+):
+    """User account page with profile info and active sessions."""
+    repo = request.app.state.repo
+    db_user = await repo.get_user_by_id(user["user_id"])
+    sessions = await repo.get_user_active_sessions(user["user_id"])
+
+    otp_chat_id = await get_otp_chat_id(repo)
+    otp_configured = bool(otp_chat_id)
+
+    templates = request.app.state.templates
+    return templates.TemplateResponse(
+        "account.html",
+        {
+            "request": request,
+            "user": user,
+            "db_user": db_user,
+            "sessions": sessions,
+            "otp_configured": otp_configured,
+        },
+    )
+
+
+@router.get("/recover", response_class=HTMLResponse)
+async def recover_page(request: Request):
+    """Account recovery page (does NOT require auth)."""
+    templates = request.app.state.templates
+    return templates.TemplateResponse("recover.html", {"request": request})
