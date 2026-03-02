@@ -17,12 +17,27 @@ from sqlalchemy.orm import selectinload
 from src.database.connection import get_session
 from src.database.models import (
     Category,
+    DashboardUser,
     Keyword,
+    OTPCode,
     PostTemplate,
     PublishedProduct,
     Schedule,
+    Session as SessionModel,
     Setting,
     SystemLog,
+)
+from src.dashboard.auth import (
+    LOCKOUT_DURATION_MINUTES,
+    LOCKOUT_THRESHOLD,
+    OTP_EXPIRY_SECONDS,
+    SESSION_MAX_AGE,
+    generate_otp,
+    generate_recovery_key,
+    generate_session_id,
+    hash_password,
+    parse_user_agent,
+    verify_password,
 )
 
 logger = logging.getLogger(__name__)
@@ -660,3 +675,467 @@ class Repository:
             "bot_is_running": bot_is_running,
             "last_publish_at": last_publish_at if last_publish_at else None,
         }
+
+    # ────────────────────────────────────────────────────────
+    #  DASHBOARD USERS
+    # ────────────────────────────────────────────────────────
+
+    async def get_user_by_username(
+        self, username: str
+    ) -> DashboardUser | None:
+        """Get a dashboard user by username (case-insensitive)."""
+        async with get_session() as session:
+            stmt = select(DashboardUser).where(
+                func.lower(DashboardUser.username) == username.lower()
+            )
+            result = await session.execute(stmt)
+            return result.scalars().first()
+
+    async def get_user_by_id(self, user_id: int) -> DashboardUser | None:
+        """Get a dashboard user by ID."""
+        async with get_session() as session:
+            stmt = select(DashboardUser).where(DashboardUser.id == user_id)
+            result = await session.execute(stmt)
+            return result.scalars().first()
+
+    async def create_user(
+        self,
+        username: str,
+        password: str,
+        display_name: str = "المسؤول",
+    ) -> tuple[DashboardUser, str]:
+        """Create a new dashboard user.
+
+        Returns:
+            ``(user, plain_recovery_key)`` — the recovery key is returned
+            **once** for display to the admin.
+        """
+        pw_hash = hash_password(password)
+        recovery_key = generate_recovery_key()
+        rk_hash = hash_password(recovery_key)
+
+        async with get_session() as session:
+            user = DashboardUser(
+                username=username,
+                password_hash=pw_hash,
+                display_name=display_name,
+                recovery_key_hash=rk_hash,
+            )
+            session.add(user)
+            await session.flush()
+            await session.refresh(user, attribute_names=["id"])
+            return user, recovery_key
+
+    async def update_user_password(
+        self, user_id: int, new_password: str
+    ) -> bool:
+        """Hash and store a new password. Returns ``True`` on success."""
+        async with get_session() as session:
+            stmt = select(DashboardUser).where(DashboardUser.id == user_id)
+            result = await session.execute(stmt)
+            user = result.scalars().first()
+            if user is None:
+                return False
+            user.password_hash = hash_password(new_password)
+            await session.flush()
+            return True
+
+    async def update_user_profile(
+        self, user_id: int, data: dict[str, Any]
+    ) -> DashboardUser | None:
+        """Update username and/or display_name.
+
+        Raises:
+            ValueError: If the requested username is already taken.
+        """
+        async with get_session() as session:
+            stmt = select(DashboardUser).where(DashboardUser.id == user_id)
+            result = await session.execute(stmt)
+            user = result.scalars().first()
+            if user is None:
+                return None
+
+            if "username" in data and data["username"] != user.username:
+                existing = await session.execute(
+                    select(DashboardUser).where(
+                        func.lower(DashboardUser.username)
+                        == data["username"].lower(),
+                        DashboardUser.id != user_id,
+                    )
+                )
+                if existing.scalars().first() is not None:
+                    raise ValueError("Username already taken")
+                user.username = data["username"]
+
+            if "display_name" in data:
+                user.display_name = data["display_name"]
+
+            await session.flush()
+            await session.refresh(user)
+            return user
+
+    async def record_login_success(
+        self, user_id: int, ip_address: str
+    ) -> None:
+        """Record a successful login: timestamp, IP, and reset counters."""
+        async with get_session() as session:
+            stmt = select(DashboardUser).where(DashboardUser.id == user_id)
+            result = await session.execute(stmt)
+            user = result.scalars().first()
+            if user is None:
+                return
+            user.last_login_at = datetime.utcnow()
+            user.last_login_ip = ip_address
+            user.failed_login_attempts = 0
+            user.locked_until = None
+            await session.flush()
+
+    async def record_login_failure(self, username: str) -> int:
+        """Increment the failure counter for *username*.
+
+        Returns the updated count (0 if user not found — don't reveal
+        user existence).
+        """
+        async with get_session() as session:
+            stmt = select(DashboardUser).where(
+                func.lower(DashboardUser.username) == username.lower()
+            )
+            result = await session.execute(stmt)
+            user = result.scalars().first()
+            if user is None:
+                return 0
+            user.failed_login_attempts += 1
+            if user.failed_login_attempts >= LOCKOUT_THRESHOLD:
+                user.locked_until = datetime.utcnow() + timedelta(
+                    minutes=LOCKOUT_DURATION_MINUTES
+                )
+            await session.flush()
+            return user.failed_login_attempts
+
+    async def is_user_locked(self, username: str) -> bool:
+        """Check whether a user account is currently locked out."""
+        async with get_session() as session:
+            stmt = select(DashboardUser).where(
+                func.lower(DashboardUser.username) == username.lower()
+            )
+            result = await session.execute(stmt)
+            user = result.scalars().first()
+            if user is None:
+                return False
+            if user.locked_until is None:
+                return False
+            if user.locked_until > datetime.utcnow():
+                return True
+            # Lock has expired — auto-reset
+            user.locked_until = None
+            user.failed_login_attempts = 0
+            await session.flush()
+            return False
+
+    async def is_new_ip_for_user(
+        self, user_id: int, ip_address: str
+    ) -> bool:
+        """Return ``True`` if *ip_address* has never been seen for this user."""
+        async with get_session() as session:
+            # Check user's last_login_ip
+            user_stmt = select(DashboardUser).where(
+                DashboardUser.id == user_id
+            )
+            user_result = await session.execute(user_stmt)
+            user = user_result.scalars().first()
+            if user and user.last_login_ip == ip_address:
+                return False
+
+            # Check existing sessions
+            sess_stmt = (
+                select(func.count())
+                .select_from(SessionModel)
+                .where(
+                    SessionModel.user_id == user_id,
+                    SessionModel.ip_address == ip_address,
+                )
+            )
+            result = await session.execute(sess_stmt)
+            return (result.scalar() or 0) == 0
+
+    async def verify_recovery_key(
+        self, username: str, recovery_key: str
+    ) -> DashboardUser | None:
+        """Verify a recovery key. Returns the user if valid, else ``None``."""
+        async with get_session() as session:
+            stmt = select(DashboardUser).where(
+                func.lower(DashboardUser.username) == username.lower()
+            )
+            result = await session.execute(stmt)
+            user = result.scalars().first()
+            if user is None or not user.recovery_key_hash:
+                return None
+            if verify_password(recovery_key, user.recovery_key_hash):
+                return user
+            return None
+
+    async def reset_user_via_recovery(
+        self, user_id: int, new_password: str
+    ) -> None:
+        """Reset password and unlock account after recovery verification."""
+        async with get_session() as session:
+            stmt = select(DashboardUser).where(DashboardUser.id == user_id)
+            result = await session.execute(stmt)
+            user = result.scalars().first()
+            if user is None:
+                return
+            user.password_hash = hash_password(new_password)
+            user.failed_login_attempts = 0
+            user.locked_until = None
+            await session.flush()
+
+    async def ensure_admin_exists(self) -> str | None:
+        """Create the initial admin user if none exist.
+
+        Uses ``settings.dashboard_username`` and
+        ``settings.dashboard_password`` from ``.env``.
+
+        Returns:
+            The plain-text recovery key for one-time display, or
+            ``None`` if users already exist.
+        """
+        async with get_session() as session:
+            count = (
+                await session.execute(
+                    select(func.count()).select_from(DashboardUser)
+                )
+            ).scalar() or 0
+            if count > 0:
+                return None
+
+        # No users — create the admin
+        from src.config import settings
+
+        user, recovery_key = await self.create_user(
+            username=settings.dashboard_username,
+            password=settings.dashboard_password,
+        )
+        logger.info("Created initial admin user: %s", user.username)
+        return recovery_key
+
+    # ────────────────────────────────────────────────────────
+    #  SESSIONS
+    # ────────────────────────────────────────────────────────
+
+    async def create_session(
+        self, user_id: int, ip_address: str, user_agent: str
+    ) -> SessionModel:
+        """Create a new active session with parsed device info."""
+        session_id = generate_session_id()
+        device_info = parse_user_agent(user_agent)
+        expires = datetime.utcnow() + timedelta(seconds=SESSION_MAX_AGE)
+
+        async with get_session() as db:
+            sess = SessionModel(
+                id=session_id,
+                user_id=user_id,
+                ip_address=ip_address,
+                user_agent=user_agent[:500] if user_agent else None,
+                device_info=device_info,
+                expires_at=expires,
+            )
+            db.add(sess)
+            await db.flush()
+            await db.refresh(sess)
+            return sess
+
+    async def get_session_by_id(
+        self, session_id: str
+    ) -> SessionModel | None:
+        """Get an active, non-expired session (eager-loads user).
+
+        Auto-deactivates expired sessions found during lookup.
+        """
+        async with get_session() as db:
+            stmt = (
+                select(SessionModel)
+                .options(selectinload(SessionModel.user))
+                .where(SessionModel.id == session_id)
+            )
+            result = await db.execute(stmt)
+            sess = result.scalars().first()
+            if sess is None:
+                return None
+            if not sess.is_active:
+                return None
+            if sess.expires_at <= datetime.utcnow():
+                sess.is_active = False
+                await db.flush()
+                return None
+            return sess
+
+    async def update_session_activity(self, session_id: str) -> None:
+        """Touch ``last_active_at`` for an active session."""
+        async with get_session() as db:
+            await db.execute(
+                update(SessionModel)
+                .where(
+                    SessionModel.id == session_id,
+                    SessionModel.is_active.is_(True),
+                )
+                .values(last_active_at=datetime.utcnow())
+            )
+
+    async def deactivate_session(self, session_id: str) -> None:
+        """Deactivate a session (logout)."""
+        async with get_session() as db:
+            await db.execute(
+                update(SessionModel)
+                .where(SessionModel.id == session_id)
+                .values(is_active=False)
+            )
+
+    async def deactivate_other_sessions(
+        self, user_id: int, keep_session_id: str
+    ) -> int:
+        """Deactivate all sessions except *keep_session_id*.
+
+        Returns the count of deactivated sessions.
+        """
+        async with get_session() as db:
+            # Count first
+            count_stmt = (
+                select(func.count())
+                .select_from(SessionModel)
+                .where(
+                    SessionModel.user_id == user_id,
+                    SessionModel.is_active.is_(True),
+                    SessionModel.id != keep_session_id,
+                )
+            )
+            count = (await db.execute(count_stmt)).scalar() or 0
+
+            if count > 0:
+                await db.execute(
+                    update(SessionModel)
+                    .where(
+                        SessionModel.user_id == user_id,
+                        SessionModel.is_active.is_(True),
+                        SessionModel.id != keep_session_id,
+                    )
+                    .values(is_active=False)
+                )
+            return count
+
+    async def deactivate_all_sessions(self, user_id: int) -> int:
+        """Deactivate **all** sessions for a user. Returns count."""
+        async with get_session() as db:
+            count_stmt = (
+                select(func.count())
+                .select_from(SessionModel)
+                .where(
+                    SessionModel.user_id == user_id,
+                    SessionModel.is_active.is_(True),
+                )
+            )
+            count = (await db.execute(count_stmt)).scalar() or 0
+
+            if count > 0:
+                await db.execute(
+                    update(SessionModel)
+                    .where(
+                        SessionModel.user_id == user_id,
+                        SessionModel.is_active.is_(True),
+                    )
+                    .values(is_active=False)
+                )
+            return count
+
+    async def get_user_active_sessions(
+        self, user_id: int
+    ) -> list[SessionModel]:
+        """Active, non-expired sessions for a user, newest-activity first."""
+        async with get_session() as db:
+            stmt = (
+                select(SessionModel)
+                .where(
+                    SessionModel.user_id == user_id,
+                    SessionModel.is_active.is_(True),
+                    SessionModel.expires_at > datetime.utcnow(),
+                )
+                .order_by(SessionModel.last_active_at.desc())
+            )
+            result = await db.execute(stmt)
+            return list(result.scalars().all())
+
+    async def cleanup_expired_sessions(self) -> None:
+        """Delete expired or inactive sessions older than 7 days."""
+        cutoff = datetime.utcnow() - timedelta(days=7)
+        async with get_session() as db:
+            await db.execute(
+                delete(SessionModel).where(
+                    (SessionModel.expires_at < datetime.utcnow())
+                    | (
+                        SessionModel.is_active.is_(False)
+                        & (SessionModel.created_at < cutoff)
+                    )
+                )
+            )
+
+    # ────────────────────────────────────────────────────────
+    #  OTP CODES
+    # ────────────────────────────────────────────────────────
+
+    async def create_otp(self, user_id: int, purpose: str) -> str:
+        """Create a new OTP code, invalidating any previous unused one.
+
+        Returns the plain 6-digit code.
+        """
+        async with get_session() as db:
+            # Invalidate previous unused OTPs for same user + purpose
+            await db.execute(
+                update(OTPCode)
+                .where(
+                    OTPCode.user_id == user_id,
+                    OTPCode.purpose == purpose,
+                    OTPCode.is_used.is_(False),
+                )
+                .values(is_used=True)
+            )
+
+            code = generate_otp()
+            otp = OTPCode(
+                user_id=user_id,
+                code=code,
+                purpose=purpose,
+                expires_at=datetime.utcnow()
+                + timedelta(seconds=OTP_EXPIRY_SECONDS),
+            )
+            db.add(otp)
+            await db.flush()
+            return code
+
+    async def verify_otp(
+        self, user_id: int, code: str, purpose: str
+    ) -> bool:
+        """Verify and consume an OTP. Returns ``True`` if valid."""
+        async with get_session() as db:
+            stmt = select(OTPCode).where(
+                OTPCode.user_id == user_id,
+                OTPCode.code == code,
+                OTPCode.purpose == purpose,
+                OTPCode.is_used.is_(False),
+                OTPCode.expires_at > datetime.utcnow(),
+            )
+            result = await db.execute(stmt)
+            otp = result.scalars().first()
+            if otp is None:
+                return False
+            otp.is_used = True
+            await db.flush()
+            return True
+
+    async def cleanup_expired_otps(self) -> None:
+        """Delete all expired or already-used OTP codes."""
+        async with get_session() as db:
+            await db.execute(
+                delete(OTPCode).where(
+                    (OTPCode.expires_at < datetime.utcnow())
+                    | OTPCode.is_used.is_(True)
+                )
+            )
