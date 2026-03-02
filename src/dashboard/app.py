@@ -4,6 +4,7 @@ Creates a fully configured FastAPI instance with:
 - Static file serving
 - Jinja2 template engine
 - Shared state (repository, scheduler, engine)
+- Security middleware
 - Route routers (mounted by the factory)
 """
 
@@ -42,6 +43,8 @@ def create_dashboard_app(
         repository: Database access layer.
         scheduler: APScheduler wrapper for publish jobs.
         engine: Main bot orchestration engine.
+        security_notifier: Telegram security notifier for OTP / alerts.
+        app_settings: Application settings object.
 
     Returns:
         A fully configured :class:`FastAPI` instance.
@@ -53,6 +56,15 @@ def create_dashboard_app(
         docs_url="/api/docs",
         redoc_url=None,
     )
+
+    # ── Security middleware ──────────────────────────────────
+    from src.dashboard.middleware import (
+        RequestLoggingMiddleware,
+        SecurityHeadersMiddleware,
+    )
+
+    app.add_middleware(SecurityHeadersMiddleware)
+    app.add_middleware(RequestLoggingMiddleware)
 
     # ── Ensure directories exist ────────────────────────────
     _STATIC_DIR.mkdir(parents=True, exist_ok=True)

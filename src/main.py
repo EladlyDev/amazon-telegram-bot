@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import secrets
 import signal
 import sys
 from logging.handlers import RotatingFileHandler
@@ -106,19 +107,100 @@ def _validate_config() -> None:
         logger.info("Amazon PA API keys found — using PA API client.")
 
 
+def _check_security_defaults() -> None:
+    """Warn about insecure default values."""
+    if settings.dashboard_password == "admin123":
+        logger.warning(
+            "⚠️  dashboard_password is set to default 'admin123'. "
+            "Change it immediately for production!"
+        )
+    if settings.dashboard_secret_key == "change-me-to-random":
+        new_key = secrets.token_hex(32)
+        logger.warning(
+            "⚠️  dashboard_secret_key is default — auto-generated a secure key for this session. "
+            "Set DASHBOARD_SECRET_KEY in .env for persistence."
+        )
+        # Override in-memory only (doesn't modify .env)
+        settings.dashboard_secret_key = new_key
+
+
 # ── Sync settings from .env → database ────────────────────
 
 async def _sync_env_to_db(repo) -> None:
-    """Push .env values into DB settings so they override any stale data."""
+    """Push .env values into DB settings *only if the DB value is empty*.
+
+    This ensures first-run values are seeded but existing DB values
+    (potentially changed via the dashboard) are never overwritten.
+    """
     pairs = [
         ("telegram.channel_id", settings.telegram_channel_id),
         ("telegram.admin_chat_id", settings.telegram_admin_chat_id),
         ("amazon.partner_tag", settings.amazon_partner_tag),
     ]
-    for key, value in pairs:
-        if value:
-            await repo.set_setting(key, value)
-    logger.debug("Synced .env overrides to database settings.")
+    synced = 0
+    for key, env_value in pairs:
+        if not env_value:
+            continue
+        db_value = await repo.get_setting(key)
+        if not db_value:
+            await repo.set_setting(key, env_value)
+            synced += 1
+    if synced:
+        logger.info("Synced %d .env value(s) to database (first-run seed).", synced)
+
+
+# ── Periodic cleanup tasks ─────────────────────────────────
+
+def _register_cleanup_tasks(scheduler, repo) -> None:
+    """Schedule periodic cleanup jobs for security-related data."""
+    from apscheduler.triggers.interval import IntervalTrigger
+
+    underlying = scheduler._scheduler  # access the raw APScheduler
+
+    async def _cleanup_sessions():
+        try:
+            await repo.cleanup_expired_sessions()
+            logger.debug("Cleaned up expired sessions.")
+        except Exception as exc:
+            logger.warning("Session cleanup failed: %s", exc)
+
+    async def _cleanup_otps():
+        try:
+            await repo.cleanup_expired_otps()
+            logger.debug("Cleaned up expired OTPs.")
+        except Exception as exc:
+            logger.warning("OTP cleanup failed: %s", exc)
+
+    async def _cleanup_rate_limiters():
+        from src.dashboard.rate_limit import login_limiter, recovery_limiter
+        try:
+            await login_limiter.cleanup()
+            await recovery_limiter.cleanup()
+            logger.debug("Cleaned up rate limiter entries.")
+        except Exception as exc:
+            logger.warning("Rate limiter cleanup failed: %s", exc)
+
+    underlying.add_job(
+        _cleanup_sessions,
+        trigger=IntervalTrigger(hours=6),
+        id="cleanup_sessions",
+        replace_existing=True,
+    )
+    underlying.add_job(
+        _cleanup_otps,
+        trigger=IntervalTrigger(hours=1),
+        id="cleanup_otps",
+        replace_existing=True,
+    )
+    underlying.add_job(
+        _cleanup_rate_limiters,
+        trigger=IntervalTrigger(hours=1),
+        id="cleanup_rate_limiters",
+        replace_existing=True,
+    )
+    logger.info(
+        "Registered cleanup tasks: sessions (6h), OTPs (1h), rate limiters (1h)."
+    )
 
 
 # ── Main ───────────────────────────────────────────────────
@@ -129,6 +211,7 @@ async def main() -> None:  # noqa: C901 — orchestration function
     _print_banner()
     _log_config()
     _validate_config()
+    _check_security_defaults()
 
     # ── 1. Database ────────────────────────────────────────
     from src.database.connection import init_db
@@ -188,7 +271,7 @@ async def main() -> None:  # noqa: C901 — orchestration function
     )
     await admin_bot.start_polling()
 
-    # ── 6. Sync .env → DB ────────────────────────────────
+    # ── 6. Sync .env → DB (only if DB values are empty) ──
     await _sync_env_to_db(repo)
 
     # ── 7. Startup notification ───────────────────────────
@@ -202,7 +285,10 @@ async def main() -> None:  # noqa: C901 — orchestration function
 
     security_notifier = SecurityNotifier(bot_token=bot_token, repo=repo)
 
-    # ── 9. Dashboard (blocks until shutdown) ──────────────
+    # ── 9. Register cleanup tasks ────────────────────────
+    _register_cleanup_tasks(scheduler, repo)
+
+    # ── 10. Dashboard (blocks until shutdown) ─────────────
     from src.dashboard.app import create_dashboard_app
 
     app = create_dashboard_app(
@@ -243,6 +329,15 @@ async def main() -> None:  # noqa: C901 — orchestration function
             await notifier.send_shutdown_notification()
         except Exception as exc:
             logger.debug("Shutdown notification failed: %s", exc)
+        # Send security shutdown alert
+        try:
+            admin_id = await repo.get_setting("telegram.admin_chat_id")
+            if admin_id:
+                await security_notifier.send_alert(
+                    admin_id, "🔴 النظام يتوقف (إيقاف مخطط)"
+                )
+        except Exception:
+            pass
         try:
             await admin_bot.stop()
         except Exception:
