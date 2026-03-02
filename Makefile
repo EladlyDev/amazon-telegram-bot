@@ -10,7 +10,7 @@ setup:
 	$(PIP) install -r requirements.txt
 	@test -f .env || cp .env.example .env
 	@mkdir -p data logs
-	@echo "✅ Setup complete. Activate venv with: source $(VENV)/bin/activate"
+	@echo "Setup complete. Activate venv with: source $(VENV)/bin/activate"
 
 run:
 	$(PYTHON) -m src.main
@@ -19,10 +19,10 @@ dev:
 	LOG_LEVEL=DEBUG $(PYTHON) -m src.main
 
 dev-bot:
-	@echo "🤖 Starting dev bot — send /start to your bot on Telegram..."
+	@echo "Starting dev bot -- send /start to your bot on Telegram..."
 	$(PYTHON) run_dev_bot.py
 
 clean:
 	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
 	find . -type f -name "*.pyc" -delete 2>/dev/null || true
-	@echo "🧹 Cleaned up."
+	@echo "Cleaned up."

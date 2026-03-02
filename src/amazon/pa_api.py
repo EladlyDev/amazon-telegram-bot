@@ -81,49 +81,63 @@ class PAAPIClient(AmazonClient):
         self,
         keywords: str,
         search_index: str = "All",
-        item_count: int = 10,
+        item_count: int = 30,
         min_price: int | None = None,
         max_price: int | None = None,
         browse_node: str | None = None,
     ) -> list[Product]:
-        """Search Amazon.sa via PA API and return parsed products."""
-        payload = self._build_payload(
-            keywords, search_index, item_count, min_price, max_price, browse_node
-        )
-        body = json.dumps(payload, separators=(",", ":"))
-        headers = self._sign_request(body)
+        """Search Amazon.sa via PA API and return parsed products.
 
-        try:
-            response = await self._client.post(
-                f"https://{self.HOST}{self.SEARCH_PATH}",
-                content=body,
-                headers=headers,
+        The API caps at 10 items per request, so we paginate
+        to fill the requested *item_count* (max 3 pages = 30).
+        """
+        all_products: list[Product] = []
+        pages_needed = min((item_count + 9) // 10, 3)  # max 3 pages
+
+        for page in range(1, pages_needed + 1):
+            payload = self._build_payload(
+                keywords, search_index, 10, min_price, max_price, browse_node
             )
-            response.raise_for_status()
+            payload["ItemPage"] = page
+            body = json.dumps(payload, separators=(",", ":"))
+            headers = self._sign_request(body)
 
-        except httpx.HTTPStatusError as exc:
-            if exc.response.status_code == 429:
-                logger.warning("PA API rate limited (429). Returning empty list.")
-            else:
-                logger.error(
-                    "PA API HTTP error %s: %s",
-                    exc.response.status_code,
-                    exc.response.text[:500],
+            try:
+                response = await self._client.post(
+                    f"https://{self.HOST}{self.SEARCH_PATH}",
+                    content=body,
+                    headers=headers,
                 )
-            return []
+                response.raise_for_status()
 
-        except httpx.RequestError as exc:
-            logger.error("PA API connection error: %s", exc)
-            return []
+            except httpx.HTTPStatusError as exc:
+                if exc.response.status_code == 429:
+                    logger.warning("PA API rate limited (429). Stopping pagination.")
+                else:
+                    logger.error(
+                        "PA API HTTP error %s: %s",
+                        exc.response.status_code,
+                        exc.response.text[:500],
+                    )
+                break
 
-        try:
-            data = response.json()
-        except Exception:
-            logger.error("PA API returned non-JSON response.")
-            return []
+            except httpx.RequestError as exc:
+                logger.error("PA API connection error: %s", exc)
+                break
 
-        products = self._parse_response(data, keywords)
-        return products
+            try:
+                data = response.json()
+            except Exception:
+                logger.error("PA API returned non-JSON response.")
+                break
+
+            products = self._parse_response(data, keywords)
+            all_products.extend(products)
+
+            if len(products) < 10:
+                break  # no more results available
+
+        return all_products
 
     async def close(self) -> None:
         """Close the underlying HTTP client."""
@@ -202,8 +216,8 @@ class PAAPIClient(AmazonClient):
                 best_price = price
                 best_item = item
 
-        if best_item is None or best_price >= product.current_price:
-            return product  # current variant is already cheapest
+        if best_item is None or best_price >= product.current_price - 0.01:
+            return product  # current variant is already cheapest (or same price)
 
         # ── Update product with cheapest variant's data ─────
         logger.info(
@@ -242,6 +256,66 @@ class PAAPIClient(AmazonClient):
             product.savings_percent = round(
                 (product.savings_amount / product.original_price) * 100, 1
             )
+
+        return product
+
+    async def _enrich_rating(self, product: Product) -> Product:
+        """Scrape rating/review count from the product page.
+
+        The PA API does not return ``CustomerReviews`` for the ``amazon.sa``
+        marketplace, so we fetch the product page and parse the rating
+        from HTML as a lightweight enrichment step.
+        """
+        import re
+
+        url = f"https://www.amazon.sa/dp/{product.asin}"
+        headers = {
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/120.0.0.0 Safari/537.36"
+            ),
+            "Accept-Language": "ar-SA,ar;q=0.9,en;q=0.5",
+        }
+
+        try:
+            resp = await self._client.get(
+                url, headers=headers, follow_redirects=True, timeout=10.0,
+            )
+            text = resp.text
+
+            # Rating: look for "X.X out of 5" or "X.X من 5"
+            # Also handles Arabic-Indic numerals (٤.٥)
+            ar_digits = str.maketrans("٠١٢٣٤٥٦٧٨٩", "0123456789")
+
+            rating_match = re.search(
+                r'<span[^>]*id="acrPopover"[^>]*title="([^"]+)"', text
+            )
+            if rating_match:
+                rating_text = rating_match.group(1).translate(ar_digits)
+                num = re.search(r"(\d+\.?\d*)", rating_text)
+                if num:
+                    product.rating = float(num.group(1))
+
+            # Review count: look for "X,XXX ratings" or similar
+            count_match = re.search(
+                r'<span[^>]*id="acrCustomerReviewText"[^>]*>([^<]+)', text
+            )
+            if count_match:
+                count_text = count_match.group(1).translate(ar_digits)
+                count_num = re.search(r"([\d,]+)", count_text.replace("٬", ","))
+                if count_num:
+                    product.reviews_count = int(
+                        count_num.group(1).replace(",", "")
+                    )
+
+            if product.rating > 0:
+                logger.info(
+                    "Enriched rating for %s: %.1f (%d reviews)",
+                    product.asin, product.rating, product.reviews_count,
+                )
+        except Exception as exc:
+            logger.debug("Rating enrichment failed for %s: %s", product.asin, exc)
 
         return product
 
@@ -514,6 +588,10 @@ class PAAPIClient(AmazonClient):
         count_obj = reviews.get("Count", None)
         if count_obj is not None:
             reviews_count = int(count_obj)
+        logger.debug(
+            "Item %s reviews: raw=%s, rating=%.1f, count=%d",
+            asin, reviews, rating, reviews_count,
+        )
 
         return Product(
             asin=asin,

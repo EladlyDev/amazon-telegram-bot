@@ -182,7 +182,7 @@
                     <div>
                         <label class="block text-xs font-medium text-gray-600 mb-1.5">محتوى القالب</label>
                         <textarea x-ref="bodyTextarea" x-model="form.body" dir="auto" rows="12"
-                            placeholder="🏷️ <b>{title}</b>&#10;&#10;💰 السعر: <s>{original_price}</s> ← <b>{current_price} {currency}</b>&#10;📉 خصم: {savings_percent}%&#10;&#10;🛒 <a href='{url}'>اشترِ الآن</a>"
+                            placeholder="<b>{title}</b>&#10;&#10;السعر: <s>{original_price}</s> > <b>{current_price} {currency}</b>&#10;خصم: {savings_percent}%&#10;&#10;<a href='{url}'>اشترِ الآن</a>"
                             class="w-full px-4 py-3 text-sm bg-gray-50 border border-gray-200 rounded-xl
                                          focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 focus:bg-white
                                          transition-all outline-none font-mono resize-y"
@@ -260,7 +260,7 @@
                                 <div class="text-sm leading-relaxed text-gray-800 whitespace-pre-wrap" dir="auto"
                                     x-html="preview || '<span class=text-gray-400>اكتب القالب ثم اضغط معاينة</span>'">
                                 </div>
-                                <div class="text-left text-[10px] text-gray-400 mt-2">12:30 ✓✓</div>
+                                <div class="text-left text-[10px] text-gray-400 mt-2">12:30</div>
                             </div>
                             <button @click="loadPreview()" class="mt-4 px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-600 text-xs
                                            font-medium rounded-xl transition-colors mx-auto flex items-center gap-1.5">

@@ -164,7 +164,6 @@ class BotEngine:
             products = await self._amazon.search_products(
                 keywords=keyword.keyword,
                 search_index=category.amazon_search_index or "All",
-                item_count=10,
                 min_price=(
                     int(category.min_price * 100)
                     if category.min_price and category.min_price > 0
@@ -242,17 +241,46 @@ class BotEngine:
             return False
 
         # ── 5. SELECT BEST (highest discount) ───────────────
-        best = sorted(unique, key=lambda p: p.savings_percent, reverse=True)[0]
-        best.category = category.name_ar or category.name
-        best.keyword_used = keyword.keyword
+        candidates = sorted(unique, key=lambda p: p.savings_percent, reverse=True)
 
-        # ── 5b. VARIANT ENRICHMENT (only for the selected product) ──
+        # ── 5b. VARIANT ENRICHMENT — try each candidate until one works ──
         from src.amazon.pa_api import PAAPIClient
-        if isinstance(self._amazon, PAAPIClient):
+        best = None
+        original_asin = None
+        for candidate in candidates:
+            candidate.category = category.name_ar or category.name
+            candidate.keyword_used = keyword.keyword
+            original_asin = candidate.asin
+
+            if isinstance(self._amazon, PAAPIClient):
+                try:
+                    candidate = await self._amazon._get_cheapest_variant(candidate)
+                except Exception as exc:
+                    logger.debug("Variant lookup failed for %s: %s", candidate.asin, exc)
+
+                # If variant swap changed the ASIN, re-check dedup
+                if candidate.asin != original_asin:
+                    if await self.dedup.is_duplicate(candidate.asin):
+                        logger.info(
+                            "Variant ASIN %s is a duplicate — trying next candidate.",
+                            candidate.asin,
+                        )
+                        continue
+
+            best = candidate
+            break
+
+        if best is None:
+            logger.info("All candidates' variants are duplicates — skipping.")
+            await self.rotator.advance()
+            return False
+
+        # ── 5c. RATING ENRICHMENT (PA API doesn't return reviews for amazon.sa) ──
+        if isinstance(self._amazon, PAAPIClient) and best.rating == 0:
             try:
-                best = await self._amazon._get_cheapest_variant(best)
+                best = await self._amazon._enrich_rating(best)
             except Exception as exc:
-                logger.debug("Variant lookup failed for %s: %s", best.asin, exc)
+                logger.debug("Rating enrichment failed for %s: %s", best.asin, exc)
 
         logger.info(
             "Selected: %s — %s (%.0f%% off)",
@@ -305,6 +333,15 @@ class BotEngine:
             best, "published", telegram_message_id=telegram_message_id
         )
 
+        # Also mark the original search ASIN as published so it's
+        # caught by dedup on future searches (variant swap changes ASIN).
+        if original_asin != best.asin:
+            await self._save_product(
+                best, "published",
+                telegram_message_id=telegram_message_id,
+                override_asin=original_asin,
+            )
+
         # ── 9. UPDATE STATS ─────────────────────────────────
         await self._repo.update_keyword_usage(
             keyword.id, products_found=len(filtered)
@@ -322,7 +359,7 @@ class BotEngine:
         # ── 10. LOG ─────────────────────────────────────────
         self._last_published_title = best.title
         logger.info(
-            "✅ Published: [%s] %s (msg_id=%s)",
+            "Published: [%s] %s (msg_id=%s)",
             best.asin, best.title[:50], telegram_message_id,
         )
         await self._repo.log_event(
@@ -381,11 +418,12 @@ class BotEngine:
         *,
         telegram_message_id: int | None = None,
         error_message: str | None = None,
+        override_asin: str | None = None,
     ) -> None:
         """Persist a product record to the database."""
         try:
             data = {
-                "asin": product.asin,
+                "asin": override_asin or product.asin,
                 "title": product.title,
                 "brand": product.brand,
                 "original_price": product.original_price,

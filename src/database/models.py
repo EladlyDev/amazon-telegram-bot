@@ -296,7 +296,7 @@ DEFAULT_TEMPLATES: list[dict] = [
             "\n"
             "🏷️ {brand}\n"
             "\n"
-            "💰 السعر: <s>{original_price} ر.س</s>  ➜  <b>{current_price} ر.س</b>\n"
+            "💰 السعر: <s>{original_price} ر.س</s>  ➨  <b>{current_price} ر.س</b>\n"
             "💚 وفّر {savings_percent}% ({savings_amount} ر.س)\n"
             "\n"
             "{deal_display}\n"
@@ -319,7 +319,7 @@ DEFAULT_TEMPLATES: list[dict] = [
         "body": (
             "🔥 <b>{title}</b>\n"
             "\n"
-            "💰 <s>{original_price}</s> ➜ <b>{current_price} ر.س</b> (-{savings_percent}%)\n"
+            "💰 <s>{original_price}</s> ➨ <b>{current_price} ر.س</b> (-{savings_percent}%)\n"
             "\n"
             "{deal_display}\n"
             "\n"

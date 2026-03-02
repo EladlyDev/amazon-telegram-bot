@@ -63,7 +63,7 @@ class AdminNotifier:
             from src.config import settings
 
             if settings.environment == "development":
-                from src.telegram.dev_bot import get_subscriber_ids
+                from src.telegram.admin_bot import get_subscriber_ids
 
                 for sub_id in get_subscriber_ids():
                     if str(sub_id) != str(self._admin_chat_id):

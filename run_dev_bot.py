@@ -11,7 +11,7 @@ from src.config import settings
 
 async def main():
     bot = DevBot(settings.telegram_bot_token)
-    print("🤖 Dev bot running — send /start to your bot on Telegram!")
+    print("Dev bot running -- send /start to your bot on Telegram.")
     print("   Press Ctrl+C to stop.\n")
     await bot.start_polling()
 
@@ -22,7 +22,7 @@ async def main():
     await stop.wait()
 
     await bot.stop()
-    print("\n👋 Dev bot stopped.")
+    print("\nDev bot stopped.")
 
 
 asyncio.run(main())

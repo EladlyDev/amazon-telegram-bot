@@ -73,7 +73,9 @@ class Product:
         """First 5 features as a bullet list with check-mark emoji."""
         if not self.features:
             return ""
-        return "\n".join(f"✅ {f}" for f in self.features[:5])
+        # Filter out features that are too short to be meaningful
+        useful = [f for f in self.features if len(f.strip()) >= 5]
+        return "\n".join(f"✅ {f}" for f in useful[:5])
 
     @property
     def prime_badge(self) -> str:
