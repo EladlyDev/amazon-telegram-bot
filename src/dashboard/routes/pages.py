@@ -330,5 +330,10 @@ async def account_page(
 @router.get("/recover", response_class=HTMLResponse)
 async def recover_page(request: Request):
     """Account recovery page (does NOT require auth)."""
+    repo = request.app.state.repo
+    otp_chat_id = await get_otp_chat_id(repo)
     templates = request.app.state.templates
-    return templates.TemplateResponse("recover.html", {"request": request})
+    return templates.TemplateResponse(
+        "recover.html",
+        {"request": request, "otp_configured": bool(otp_chat_id)},
+    )

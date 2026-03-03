@@ -950,6 +950,141 @@ async def recover_account(request: Request):
     return {"status": "ok", "message": "تم إعادة تعيين كلمة المرور بنجاح. يمكنك تسجيل الدخول الآن."}
 
 
+@router.post("/recover/request-otp")
+async def recover_request_otp(request: Request):
+    """Send OTP for password recovery (no auth required).
+
+    Validates that the username exists and OTP is configured,
+    then sends a verification code to the admin Telegram chat.
+    """
+    repo = request.app.state.repo
+    ip = get_client_ip(request)
+
+    # Rate limit — stricter for unauthenticated endpoint
+    if await recovery_limiter.is_rate_limited(ip, 3, 3600):
+        raise HTTPException(
+            status_code=429,
+            detail="تم تجاوز عدد المحاولات. حاول بعد ساعة.",
+        )
+
+    body = await request.json()
+    username = body.get("username", "").strip()
+
+    if not username:
+        raise HTTPException(status_code=400, detail="اسم المستخدم مطلوب")
+
+    # Verify user exists
+    db_user = await repo.get_user_by_username(username)
+    if db_user is None:
+        # Don't reveal whether the user exists — silently return success
+        return {"status": "otp_sent"}
+
+    # OTP must be configured
+    otp_chat_id = await get_otp_chat_id(repo)
+    if not otp_chat_id:
+        raise HTTPException(
+            status_code=400,
+            detail="التحقق عبر تلقرام غير مفعّل. استخدم مفتاح الاسترداد بدلاً من ذلك.",
+        )
+
+    # Generate and send OTP
+    code = await repo.create_otp(db_user.id, "recovery_otp")
+
+    try:
+        bot_token = getattr(request.app.state, "settings", None)
+        token = bot_token.telegram_bot_token if bot_token else ""
+        if token:
+            bot = telegram.Bot(token=token)
+            await bot.send_message(
+                chat_id=otp_chat_id,
+                text=(
+                    "🔐 <b>رمز التحقق لاستعادة الحساب</b>\n\n"
+                    f"👤 المستخدم: <code>{username}</code>\n"
+                    f"🌐 IP: <code>{ip}</code>\n"
+                    f"🔑 الرمز: <code>{code}</code>\n\n"
+                    "⏰ صالح لمدة 5 دقائق\n"
+                    "⚠️ إذا لم تطلب هذا الرمز، تجاهل هذه الرسالة."
+                ),
+                parse_mode=telegram.constants.ParseMode.HTML,
+            )
+    except Exception as exc:
+        logger.error("Failed to send recovery OTP: %s", exc)
+        raise HTTPException(
+            status_code=500,
+            detail="تعذر إرسال رمز التحقق. تحقق من إعدادات البوت.",
+        )
+
+    await repo.log_event(
+        "INFO", "security", "recovery_otp_requested",
+        f"Recovery OTP requested for '{username}' from {ip}.",
+    )
+    return {"status": "otp_sent"}
+
+
+@router.post("/recover/verify-otp")
+async def recover_verify_otp(request: Request):
+    """Verify OTP and reset password (no auth required)."""
+    repo = request.app.state.repo
+    notifier = getattr(request.app.state, "security_notifier", None)
+    ip = get_client_ip(request)
+
+    # Rate limit
+    if await recovery_limiter.is_rate_limited(ip, 5, 3600):
+        raise HTTPException(
+            status_code=429,
+            detail="تم تجاوز عدد المحاولات. حاول بعد ساعة.",
+        )
+
+    body = await request.json()
+    username = body.get("username", "").strip()
+    code = body.get("code", "").strip()
+    new_password = body.get("new_password", "")
+    confirm_password = body.get("confirm_password", "")
+
+    if not username or not code:
+        raise HTTPException(status_code=400, detail="جميع الحقول مطلوبة")
+
+    if len(new_password) < 8:
+        raise HTTPException(
+            status_code=400,
+            detail="كلمة المرور يجب أن تكون 8 أحرف على الأقل",
+        )
+
+    if new_password != confirm_password:
+        raise HTTPException(status_code=400, detail="كلمتا المرور غير متطابقتين")
+
+    # Look up user
+    db_user = await repo.get_user_by_username(username)
+    if db_user is None:
+        raise HTTPException(status_code=400, detail="البيانات غير صحيحة")
+
+    # Verify OTP
+    valid = await repo.verify_otp(db_user.id, code, "recovery_otp")
+    if not valid:
+        await repo.log_event(
+            "WARNING", "security", "recovery_otp_failed",
+            f"Failed OTP recovery attempt for '{username}' from {ip}.",
+        )
+        raise HTTPException(
+            status_code=400,
+            detail="رمز التحقق غير صحيح أو منتهي الصلاحية",
+        )
+
+    # Reset password and deactivate all sessions
+    await repo.update_user_password(db_user.id, new_password)
+    await repo.deactivate_all_sessions(db_user.id)
+
+    if notifier:
+        await notifier.on_recovery_attempt(username, ip, True)
+
+    await repo.log_event(
+        "WARNING", "security", "recovery_otp_success",
+        f"Account '{username}' recovered via OTP from {ip}. All sessions revoked.",
+    )
+
+    return {"status": "ok", "message": "تم إعادة تعيين كلمة المرور بنجاح. يمكنك تسجيل الدخول الآن."}
+
+
 # ────────────────────────────────────────────────────────────
 #  STATS & LOGS
 # ────────────────────────────────────────────────────────────

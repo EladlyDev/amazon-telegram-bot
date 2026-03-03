@@ -2,10 +2,7 @@
 
 {% block title %}الجدول الزمني{% endblock %}
 {% block page_title %}
-<svg class="w-5 h-5 inline-block ml-1 -mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
-        d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
-</svg>
+<i data-lucide="clock" class="w-5 h-5 inline-block ml-1 -mt-0.5"></i>
 الجدول الزمني
 {% endblock %}
 
@@ -29,11 +26,8 @@
                     <div class="flex items-center gap-3">
                         <div class="w-8 h-8 rounded-lg flex items-center justify-center"
                             :class="schedule.is_active ? 'bg-emerald-100' : 'bg-amber-100'">
-                            <svg class="w-4 h-4" :class="schedule.is_active ? 'text-emerald-600' : 'text-amber-600'"
-                                fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
-                                    d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                            </svg>
+                            <i data-lucide="check-circle" class="w-4 h-4"
+                                :class="schedule.is_active ? 'text-emerald-600' : 'text-amber-600'"></i>
                         </div>
                         <span class="font-bold text-sm"
                             :class="schedule.is_active ? 'text-emerald-800' : 'text-amber-800'"
@@ -51,10 +45,7 @@
             <!-- B) Schedule Type Selector -->
             <div class="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
                 <h3 class="text-sm font-bold text-gray-700 mb-4 flex items-center gap-2">
-                    <svg class="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
-                            d="M8.25 6.75h12M8.25 12h12m-12 5.25h12M3.75 6.75h.007v.008H3.75V6.75zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zM3.75 12h.007v.008H3.75V12zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm-.375 5.25h.007v.008H3.75v-.008zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z" />
-                    </svg>
+                    <i data-lucide="list" class="w-4 h-4 text-gray-500"></i>
                     نوع الجدول
                 </h3>
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -64,12 +55,8 @@
                         : 'border-gray-200 hover:border-gray-300 bg-white'">
                         <div class="w-10 h-10 rounded-xl mb-3 flex items-center justify-center"
                             :class="schedule.schedule_type === 'fixed_times' ? 'bg-indigo-100' : 'bg-gray-100'">
-                            <svg class="w-5 h-5"
-                                :class="schedule.schedule_type === 'fixed_times' ? 'text-indigo-600' : 'text-gray-500'"
-                                fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
-                                    d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
-                            </svg>
+                            <i data-lucide="clock" class="w-5 h-5"
+                                :class="schedule.schedule_type === 'fixed_times' ? 'text-indigo-600' : 'text-gray-500'"></i>
                         </div>
                         <div class="font-bold text-sm text-gray-800">أوقات محددة</div>
                         <div class="text-xs text-gray-500 mt-1">حدد أوقات معينة للنشر يومياً</div>
@@ -80,12 +67,8 @@
                         : 'border-gray-200 hover:border-gray-300 bg-white'">
                         <div class="w-10 h-10 rounded-xl mb-3 flex items-center justify-center"
                             :class="schedule.schedule_type === 'interval' ? 'bg-indigo-100' : 'bg-gray-100'">
-                            <svg class="w-5 h-5"
-                                :class="schedule.schedule_type === 'interval' ? 'text-indigo-600' : 'text-gray-500'"
-                                fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
-                                    d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182" />
-                            </svg>
+                            <i data-lucide="refresh-cw" class="w-5 h-5"
+                                :class="schedule.schedule_type === 'interval' ? 'text-indigo-600' : 'text-gray-500'"></i>
                         </div>
                         <div class="font-bold text-sm text-gray-800">كل فترة زمنية</div>
                         <div class="text-xs text-gray-500 mt-1">نشر تلقائي كل عدد دقائق محدد</div>
@@ -97,10 +80,7 @@
             <div x-show="schedule.schedule_type === 'fixed_times'" x-collapse
                 class="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
                 <h3 class="text-sm font-bold text-gray-700 mb-4 flex items-center gap-2">
-                    <svg class="w-4 h-4 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
-                            d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
+                    <i data-lucide="clock" class="w-4 h-4 text-indigo-500"></i>
                     أوقات النشر اليومية
                 </h3>
                 <div class="flex flex-wrap gap-2 mb-4">
@@ -109,10 +89,7 @@
                             class="inline-flex items-center gap-2 bg-indigo-50 text-indigo-700 px-3 py-1.5 rounded-full text-sm font-medium">
                             <span x-text="time"></span>
                             <button @click="removeTime(idx)" class="hover:text-red-500 transition-colors text-xs">
-                                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                        d="M6 18L18 6M6 6l12 12" />
-                                </svg>
+                                <i data-lucide="x" class="w-3 h-3"></i>
                             </button>
                         </span>
                     </template>
@@ -123,10 +100,7 @@
                         class="px-3 py-2 text-sm bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none">
                     <button @click="addTime()"
                         class="px-4 py-2 bg-indigo-500 hover:bg-indigo-600 text-white text-xs font-medium rounded-xl transition-colors flex items-center gap-1.5">
-                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                d="M12 4.5v15m7.5-7.5h-15" />
-                        </svg>
+                        <i data-lucide="plus" class="w-3.5 h-3.5"></i>
                         إضافة
                     </button>
                 </div>
@@ -155,10 +129,7 @@
             <div x-show="schedule.schedule_type === 'interval'" x-collapse
                 class="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
                 <h3 class="text-sm font-bold text-gray-700 mb-4 flex items-center gap-2">
-                    <svg class="w-4 h-4 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
-                            d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182" />
-                    </svg>
+                    <i data-lucide="refresh-cw" class="w-4 h-4 text-indigo-500"></i>
                     فترة النشر
                 </h3>
                 <div class="flex flex-wrap gap-2 mb-5">
@@ -178,10 +149,7 @@
                     <span class="text-xs text-gray-500">دقيقة</span>
                 </div>
                 <div class="bg-indigo-50 rounded-xl px-4 py-3 text-sm text-indigo-700 flex items-center gap-2">
-                    <svg class="w-4 h-4 text-indigo-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
-                            d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z" />
-                    </svg>
+                    <i data-lucide="bar-chart-3" class="w-4 h-4 text-indigo-500 shrink-0"></i>
                     سينشر حوالي
                     <span class="font-bold" x-text="Math.floor(24 * 60 / (schedule.interval_minutes || 180))"></span>
                     مرة يومياً
@@ -191,12 +159,7 @@
             <!-- D) Additional Settings -->
             <div class="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
                 <h3 class="text-sm font-bold text-gray-700 mb-4 flex items-center gap-2">
-                    <svg class="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
-                            d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.324.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 011.37.49l1.296 2.247a1.125 1.125 0 01-.26 1.431l-1.003.827c-.293.24-.438.613-.431.992a6.759 6.759 0 010 .255c-.007.378.138.75.43.99l1.005.828c.424.35.534.954.26 1.43l-1.298 2.247a1.125 1.125 0 01-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.57 6.57 0 01-.22.128c-.331.183-.581.495-.644.869l-.213 1.28c-.09.543-.56.941-1.11.941h-2.594c-.55 0-1.02-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 01-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 01-1.369-.49l-1.297-2.247a1.125 1.125 0 01.26-1.431l1.004-.827c.292-.24.437-.613.43-.992a6.932 6.932 0 010-.255c.007-.378-.138-.75-.43-.99l-1.004-.828a1.125 1.125 0 01-.26-1.43l1.297-2.247a1.125 1.125 0 011.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.087.22-.128.332-.183.582-.495.644-.869l.214-1.281z" />
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
-                            d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                    </svg>
+                    <i data-lucide="settings" class="w-4 h-4 text-gray-500"></i>
                     إعدادات إضافية
                 </h3>
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-6">
@@ -227,10 +190,7 @@
                        rounded-xl shadow-sm transition-all disabled:opacity-50 flex items-center gap-2">
                     <span x-show="saving" class="spinner" style="width:14px;height:14px;border-width:2px"></span>
                     <span x-show="!saving">
-                        <svg class="w-4 h-4 inline -mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
-                                d="M17.593 3.322c1.1.128 1.907 1.077 1.907 2.185V21L12 17.25 4.5 21V5.507c0-1.108.806-2.057 1.907-2.185a48.507 48.507 0 0111.186 0z" />
-                        </svg>
+                        <i data-lucide="bookmark" class="w-4 h-4 inline -mt-0.5"></i>
                     </span>
                     <span x-text="saving ? 'جارِ الحفظ...' : 'حفظ التغييرات'"></span>
                 </button>
