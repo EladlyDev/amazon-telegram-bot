@@ -155,7 +155,7 @@ def _register_cleanup_tasks(scheduler, repo) -> None:
     """Schedule periodic cleanup jobs for security-related data."""
     from apscheduler.triggers.interval import IntervalTrigger
 
-    underlying = scheduler._scheduler  # access the raw APScheduler
+    underlying = scheduler.scheduler  # access the raw APScheduler
 
     async def _cleanup_sessions():
         try:

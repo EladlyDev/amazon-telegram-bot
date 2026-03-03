@@ -19,7 +19,7 @@ sys.path.insert(0, ".")
 
 async def _reset(username: str, password: str, generate_recovery: bool = False) -> None:
     """Core reset logic."""
-    from src.database.connection import init_db
+    from src.database.connection import init_db, get_session
     from src.database.repository import Repository
     from src.dashboard.auth import hash_password, generate_recovery_key
 
@@ -32,24 +32,31 @@ async def _reset(username: str, password: str, generate_recovery: bool = False) 
         print(f"\n  ❌ المستخدم '{username}' غير موجود.")
         sys.exit(1)
 
-    # Update password
-    new_hash = hash_password(password)
-    await repo.update_user_password(user.id, new_hash)
+    # Reset password + clear lockout (uses repo method that hashes internally)
+    await repo.reset_user_via_recovery(user.id, password)
     print(f"\n  ✅ تم تغيير كلمة المرور للمستخدم '{username}'.")
-
-    # Reset lockout
-    await repo.reset_user_lockout(user.id)
     print("  ✅ تم إعادة تعيين حالة القفل.")
 
     # Deactivate all sessions
-    await repo.deactivate_all_user_sessions(user.id)
-    print("  ✅ تم إنهاء جميع الجلسات النشطة.")
+    count = await repo.deactivate_all_sessions(user.id)
+    print(f"  ✅ تم إنهاء {count} جلسة نشطة.")
 
     # Optional: generate new recovery key
     if generate_recovery:
         recovery_key = generate_recovery_key()
         recovery_hash = hash_password(recovery_key)
-        await repo.update_user_recovery_key(user.id, recovery_hash)
+        # Update recovery key directly
+        from src.database.models import DashboardUser
+        from sqlalchemy import select
+
+        async with get_session() as session:
+            stmt = select(DashboardUser).where(DashboardUser.id == user.id)
+            result = await session.execute(stmt)
+            db_user = result.scalars().first()
+            if db_user:
+                db_user.recovery_key_hash = recovery_hash
+                await session.flush()
+
         print("")
         print("  ╔════════════════════════════════════════════╗")
         print(f"  ║  🔑 مفتاح الاسترداد الجديد:                ║")
