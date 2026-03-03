@@ -25,6 +25,7 @@ SENSITIVE_SETTINGS: set[str] = {
 }
 
 READONLY_SETTINGS: set[str] = {
+    "amazon.marketplace",
     "bot.is_running",
     "bot.last_publish_at",
     "bot.total_published",

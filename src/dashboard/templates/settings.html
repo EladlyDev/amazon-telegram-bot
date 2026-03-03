@@ -9,24 +9,7 @@
 {% block content %}
 <div x-data="settingsPage()" x-init="loadSettings()" class="space-y-6 max-w-4xl">
 
-    <!-- OTP Status Banner -->
-    {% if otp_configured %}
-    <div class="bg-emerald-50 border border-emerald-200 rounded-2xl px-5 py-4 flex items-center gap-3">
-        <i data-lucide="lock" class="w-5 h-5 text-emerald-600 shrink-0"></i>
-        <div>
-            <p class="text-sm font-bold text-emerald-700">الحماية مفعّلة</p>
-            <p class="text-xs text-emerald-600">الإعدادات الحساسة محمية برمز تحقق عبر تلقرام ({{ otp_target }})</p>
-        </div>
-    </div>
-    {% else %}
-    <div class="bg-amber-50 border border-amber-200 rounded-2xl px-5 py-4 flex items-center gap-3">
-        <i data-lucide="triangle-alert" class="w-5 h-5 text-amber-600 shrink-0"></i>
-        <div>
-            <p class="text-sm font-bold text-amber-700">الحماية غير مفعّلة</p>
-            <p class="text-xs text-amber-600">معرّف تلقرام غير مضبوط — لتفعيل الحماية، اضبط «معرّف المسؤول» أدناه</p>
-        </div>
-    </div>
-    {% endif %}
+
 
     <!-- Loading -->
     <div x-show="loading" class="text-center py-16">
@@ -57,28 +40,13 @@
                     <div x-show="open" x-collapse class="px-6 pb-6 space-y-5 border-t border-gray-50 pt-5">
                         <template x-for="s in (groups[section.key] || [])" :key="s.key">
                             <div class="flex flex-col sm:flex-row sm:items-start gap-2 sm:gap-6"
-                                :class="{ 'border-r-2 border-amber-400 pr-4': s.sensitivity === 'sensitive', 'opacity-60': s.sensitivity === 'readonly' }">
+                                :class="{ 'opacity-60': s.sensitivity === 'readonly' }">
                                 <div class="sm:w-1/3 shrink-0">
                                     <div class="flex items-center gap-2">
                                         <label class="text-xs font-medium text-gray-700"
                                             x-text="getLabel(s.key)"></label>
-                                        <template x-if="s.sensitivity === 'sensitive'">
-                                            <span
-                                                class="text-[9px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full font-medium">يتطلب
-                                                تحقق</span>
-                                        </template>
-                                        <template x-if="s.sensitivity === 'readonly'">
-                                            <span
-                                                class="text-[9px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded-full font-medium">للعرض
-                                                فقط</span>
-                                        </template>
                                     </div>
                                     <p class="text-[10px] text-gray-400 mt-0.5" x-text="s.description || ''"></p>
-                                    <!-- Special note for admin_chat_id -->
-                                    <template x-if="s.key === 'telegram.admin_chat_id'">
-                                        <p class="text-[10px] text-blue-500 mt-1">رمز التحقق يُرسل إلى المعرّف
-                                            الحالي. بعد التحديث، ستصل الرموز إلى المعرّف الجديد.</p>
-                                    </template>
                                 </div>
                                 <div class="flex-1">
                                     <!-- Read-only bool -->
@@ -107,8 +75,7 @@
                                     <!-- Editable string -->
                                     <template x-if="s.sensitivity !== 'readonly' && s.value_type === 'string'">
                                         <input type="text" x-model="values[s.key]" dir="auto"
-                                            class="w-full px-3 py-2 text-sm bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 focus:bg-white outline-none transition-all"
-                                            :class="s.sensitivity === 'sensitive' && 'border-amber-200'">
+                                            class="w-full px-3 py-2 text-sm bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 focus:bg-white outline-none transition-all">
                                     </template>
                                     <!-- Editable int -->
                                     <template x-if="s.sensitivity !== 'readonly' && s.value_type === 'int'">

@@ -155,9 +155,63 @@ async def dashboard_home(
 
     # Read next run time from APScheduler (the source of truth)
     next_run = scheduler.get_next_run_time()
+    # If there are no jobs with next_run, schedule isn't truly active
+    has_scheduled_jobs = next_run is not None
 
     recent_logs = await repo.get_logs(limit=10)
     daily_stats = await repo.get_daily_stats(days=7)
+
+    # ── Health checks ──────────────────────────────────────
+    health_warnings: list[dict] = []
+
+    active_cats = stats.get("active_categories", 0)
+    total_kw = stats.get("total_keywords", 0)
+
+    if active_cats == 0:
+        health_warnings.append({
+            "icon": "folder-x",
+            "message": "لا توجد فئات نشطة — البوت لن يتمكن من النشر بدون فئة واحدة على الأقل",
+            "link": "/categories",
+            "link_text": "إدارة الفئات",
+            "critical": True,
+        })
+    elif total_kw == 0:
+        health_warnings.append({
+            "icon": "search-x",
+            "message": "لا توجد كلمات مفتاحية — البوت لن يجد منتجات للنشر بدون كلمات بحث",
+            "link": "/categories",
+            "link_text": "إدارة الفئات",
+            "critical": True,
+        })
+
+    all_settings = await repo.get_all_settings()
+    settings_map = {s.key: s.value for s in all_settings}
+
+    if not settings_map.get("telegram.channel_id"):
+        health_warnings.append({
+            "icon": "radio",
+            "message": "معرّف القناة غير محدد — البوت لن يتمكن من إرسال المنشورات",
+            "link": "/settings",
+            "link_text": "الإعدادات",
+            "critical": True,
+        })
+
+    if not schedule_active:
+        health_warnings.append({
+            "icon": "clock",
+            "message": "الجدولة غير مفعّلة — لن يتم النشر التلقائي",
+            "link": "/schedule",
+            "link_text": "إعداد الجدولة",
+            "critical": False,
+        })
+    elif not has_scheduled_jobs:
+        health_warnings.append({
+            "icon": "clock",
+            "message": "الجدولة مفعّلة لكن لا توجد أوقات محددة — لن يتم النشر التلقائي",
+            "link": "/schedule",
+            "link_text": "إعداد الجدولة",
+            "critical": False,
+        })
 
     templates = request.app.state.templates
     return templates.TemplateResponse(
@@ -167,9 +221,10 @@ async def dashboard_home(
             "user": user,
             "stats": stats,
             "next_run": next_run,
-            "schedule_active": schedule_active or scheduler.is_running,
+            "schedule_active": schedule_active and has_scheduled_jobs,
             "recent_logs": recent_logs,
             "daily_stats": daily_stats,
+            "health_warnings": health_warnings,
         },
     )
 

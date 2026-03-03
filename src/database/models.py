@@ -279,7 +279,7 @@ DEFAULT_SETTINGS: list[dict[str, str]] = [
     },
     {
         "key": "amazon.data_source",
-        "value": "scraper",
+        "value": "pa_api",
         "value_type": "string",
         "group_name": "amazon",
         "description": "Data source: 'scraper' or 'pa_api'",

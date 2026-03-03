@@ -215,6 +215,18 @@ function initOTPInputs(containerId, length = 6, onComplete = null) {
                 const prev = container.querySelector(`[data-otp-index="${i - 1}"]`);
                 if (prev) { prev.value = ''; prev.focus(); }
             }
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                const code = getOTPValue(containerId, length);
+                if (code.length === length) {
+                    if (onComplete) {
+                        onComplete(code);
+                    } else {
+                        // Dispatch a custom event so Alpine can listen for it
+                        container.dispatchEvent(new CustomEvent('otp-submit', { detail: { code } }));
+                    }
+                }
+            }
         });
 
         input.addEventListener('paste', (e) => {

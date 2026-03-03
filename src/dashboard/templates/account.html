@@ -107,7 +107,7 @@
                     تم إرسال رمز التحقق إلى تلقرام
                 </p>
 
-                <div id="pw-otp" class="flex gap-2 justify-center" dir="ltr">
+                <div id="pw-otp" class="flex gap-2 justify-center" dir="ltr" @otp-submit.camel="verifyPasswordOtp()">
                     <template x-for="i in 6" :key="i">
                         <input :data-otp-index="i - 1" type="text" inputmode="numeric" maxlength="1"
                             class="w-12 h-14 text-center text-2xl font-bold border-2 border-gray-200 rounded-xl focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 outline-none transition-all bg-gray-50 focus:bg-white"
