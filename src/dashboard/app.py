@@ -76,6 +76,28 @@ def create_dashboard_app(
     # ── Templates ───────────────────────────────────────────
     templates = Jinja2Templates(directory=str(_TEMPLATE_DIR))
 
+    # Add a filter to convert UTC datetimes to local time for display
+    from datetime import datetime as _dt, timezone as _tz
+
+    def _localtime(utc_val, fmt: str = "%H:%M:%S") -> str:
+        """Convert a naive UTC datetime (or ISO string) to the server's local time."""
+        if not utc_val:
+            return "—"
+        if isinstance(utc_val, str):
+            try:
+                utc_val = _dt.fromisoformat(utc_val.replace("Z", "+00:00"))
+                if utc_val.tzinfo:
+                    return utc_val.astimezone().strftime(fmt)
+                utc_val = utc_val.replace(tzinfo=_tz.utc)
+                return utc_val.astimezone().strftime(fmt)
+            except (ValueError, TypeError):
+                return str(utc_val)
+        aware = utc_val.replace(tzinfo=_tz.utc)
+        local = aware.astimezone()
+        return local.strftime(fmt)
+
+    templates.env.filters["localtime"] = _localtime
+
     # ── Shared state ────────────────────────────────────────
     app.state.repo = repository
     app.state.scheduler = scheduler

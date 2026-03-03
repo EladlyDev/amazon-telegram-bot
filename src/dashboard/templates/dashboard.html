@@ -198,7 +198,7 @@
                     <span class="text-xs text-gray-500">آخر نشر</span>
                     <span class="text-xs font-medium text-gray-600">
                         {% if stats.last_publish_at %}
-                        {{ stats.last_publish_at[:16] | replace('T', ' ') }}
+                        {{ stats.last_publish_at | localtime('%Y-%m-%d %H:%M') }}
                         {% else %}
                         <span class="text-gray-400">لم يتم النشر بعد</span>
                         {% endif %}
@@ -245,7 +245,7 @@
                     {% for log in recent_logs %}
                     <tr class="border-b border-gray-50 hover:bg-gray-50/50 transition-colors">
                         <td class="px-6 py-3 text-xs text-gray-400 whitespace-nowrap">
-                            {{ log.created_at.strftime('%H:%M:%S') if log.created_at else '—' }}
+                            {{ log.created_at | localtime }}
                         </td>
                         <td class="px-6 py-3 text-xs text-gray-700">
                             {{ log.action | default('—') }}

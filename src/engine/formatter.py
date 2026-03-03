@@ -40,7 +40,8 @@ class MessageFormatter:
             The fully-rendered message string, with empty gaps cleaned up.
         """
         is_html = parse_mode.upper() == "HTML"
-        esc = self._escape_html if is_html else _noop
+        is_mdv2 = parse_mode.upper() in ("MARKDOWNV2", "MARKDOWN")
+        esc = self._escape_html if is_html else (self._escape_mdv2 if is_mdv2 else _noop)
 
         has_discount = product.has_discount
 
@@ -62,7 +63,7 @@ class MessageFormatter:
             "savings_percent": str(int(product.savings_percent)) if has_discount else "",
             "savings_amount": _fmt_price(product.savings_amount) if has_discount else "",
             "features": product.features_formatted,
-            "url": product.affiliate_url,  # NOT escaped — used inside href
+            "url": product.affiliate_url,  # NOT escaped — used inside link
             "prime_badge": product.prime_badge,
             "category": esc(product.category),
             "asin": product.asin,
@@ -76,14 +77,21 @@ class MessageFormatter:
         for key, value in variables.items():
             text = text.replace(f"{{{key}}}", value)
 
-        # Post-process: collapse <s>PRICE</s> ➜ <b>PRICE</b> when both
-        # prices are identical (no discount) into just the price.
+        # Post-process: collapse strikethrough price when no discount
         if not has_discount:
-            text = re.sub(
-                r"<s>[^<]*</s>\s*[➜→←]\s*",
-                "",
-                text,
-            )
+            if is_html:
+                text = re.sub(
+                    r"<s>[^<]*</s>\s*[➜→←⬅➨]\s*",
+                    "",
+                    text,
+                )
+            else:
+                # MarkdownV2: ~price~ → price
+                text = re.sub(
+                    r"~[^~]*~\s*[➜→←⬅➨]\s*",
+                    "",
+                    text,
+                )
 
         # Warn about any remaining unreplaced placeholders
         remaining = re.findall(r"\{(\w+)\}", text)
@@ -115,6 +123,38 @@ class MessageFormatter:
         return _html_escape(text, quote=True)
 
     @staticmethod
+    def _escape_mdv2(text: str) -> str:
+        """Escape MarkdownV2 special characters with backslashes."""
+        special = r'_*[]()~`>#+-=|{}.!'
+        return ''.join(f'\\{c}' if c in special else c for c in text)
+
+    @staticmethod
+    def _html_to_mdv2(text: str) -> str:
+        """Convert HTML formatting tags to MarkdownV2 equivalents.
+
+        Allows templates written with HTML tags to work seamlessly
+        when the parse_mode is switched to MarkdownV2.
+        """
+        # Links: <a href="url">text</a> → [text](url)
+        text = re.sub(
+            r'<a\s+href=["\']([^"\']+)["\']>(.*?)</a>',
+            r'[\2](\1)',
+            text,
+            flags=re.IGNORECASE | re.DOTALL,
+        )
+        # Bold: <b>text</b> or <strong>text</strong> → *text*
+        text = re.sub(r'<(?:b|strong)>(.*?)</(?:b|strong)>', r'*\1*', text, flags=re.IGNORECASE | re.DOTALL)
+        # Italic: <i>text</i> or <em>text</em> → _text_
+        text = re.sub(r'<(?:i|em)>(.*?)</(?:i|em)>', r'_\1_', text, flags=re.IGNORECASE | re.DOTALL)
+        # Strikethrough: <s>text</s> or <del>text</del> → ~text~
+        text = re.sub(r'<(?:s|del)>(.*?)</(?:s|del)>', r'~\1~', text, flags=re.IGNORECASE | re.DOTALL)
+        # Code: <code>text</code> → `text`
+        text = re.sub(r'<code>(.*?)</code>', r'`\1`', text, flags=re.IGNORECASE | re.DOTALL)
+        # Underline: <u>text</u> → __text__
+        text = re.sub(r'<u>(.*?)</u>', r'__\1__', text, flags=re.IGNORECASE | re.DOTALL)
+        return text
+
+    @staticmethod
     def _clean_empty_lines(text: str) -> str:
         """Remove empty/orphan lines and collapse 3+ newlines into 2.
 
@@ -139,7 +179,7 @@ class MessageFormatter:
                 no_html,
             )
             # Strip common punctuation/whitespace left behind
-            content_check = re.sub(r"[\s%()→➜:,.،\-—\u200f\u200e]+", "", no_emoji)
+            content_check = re.sub(r"[\s%()→➜←⬅➨:,.،\-—\u200f\u200e]+", "", no_emoji)
 
             if content_check:
                 cleaned.append(line)

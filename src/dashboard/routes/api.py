@@ -49,7 +49,7 @@ def _serialize(obj: Any) -> Any:
     if isinstance(obj, (str, int, float, bool)):
         return obj
     if isinstance(obj, datetime):
-        return obj.isoformat()
+        return obj.isoformat() + "Z"
     if isinstance(obj, list):
         return [_serialize(item) for item in obj]
     if isinstance(obj, dict):
@@ -189,6 +189,29 @@ async def list_categories(
     repo = request.app.state.repo
     categories = await repo.get_all_categories(include_inactive=True)
     return _serialize(categories)
+
+
+@router.get("/categories/warnings")
+async def get_category_warnings(
+    request: Request,
+    _user: dict = Depends(get_current_user),
+):
+    """Return recent engine warnings (last 24h) for the categories page."""
+    repo = request.app.state.repo
+    logs = await repo.get_logs(
+        limit=20, component="engine", level="WARNING",
+    )
+    # Filter to only category/keyword related actions
+    actions = {"all_filtered", "no_results", "all_duplicates", "search_error"}
+    warnings = []
+    for log in logs:
+        if log.action in actions:
+            warnings.append({
+                "message": log.message,
+                "action": log.action,
+                "created_at": _serialize(log.created_at),
+            })
+    return warnings
 
 
 @router.post("/categories")
@@ -456,6 +479,29 @@ async def preview_template(
 
     formatter = MessageFormatter()
     rendered = formatter.render(template_body, sample, parse_mode=parse_mode)
+
+    # Convert MarkdownV2 to displayable HTML for browser preview
+    if parse_mode.upper() in ("MARKDOWNV2", "MARKDOWN"):
+        import re as _re
+        from html import escape as _html_esc
+        # 1. HTML-escape everything first — any HTML tags in a MarkdownV2
+        #    template would appear as literal text in Telegram.
+        html = _html_esc(rendered)
+        # 2. Now convert MarkdownV2 formatting to HTML for visual display
+        # Bold: *text*
+        html = _re.sub(r'\*([^*]+)\*', r'<b>\1</b>', html)
+        # Italic: _text_
+        html = _re.sub(r'(?<!\\)_([^_]+)_', r'<i>\1</i>', html)
+        # Strikethrough: ~text~
+        html = _re.sub(r'~([^~]+)~', r'<s>\1</s>', html)
+        # Code: `text`
+        html = _re.sub(r'`([^`]+)`', r'<code>\1</code>', html)
+        # Links: [text](url)
+        html = _re.sub(r'\[([^\]]+)\]\(([^)]+)\)', r'<a href="\2">\1</a>', html)
+        # Unescape MarkdownV2 backslash escapes
+        html = _re.sub(r'\\([_*\[\]()~`>#+\-=|{}.!])', r'\1', html)
+        rendered = html
+
     return {"rendered": rendered}
 
 

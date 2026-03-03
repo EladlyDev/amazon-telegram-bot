@@ -196,7 +196,10 @@ class BotEngine:
                 level="WARNING",
                 component="engine",
                 action="no_results",
-                message=f"No products found for '{keyword.keyword}' in [{category.name}].",
+                message=(
+                    f"'{keyword.keyword}' في {category.name_ar or category.name}: "
+                    f"لم يتم العثور على أي منتج. جرّب كلمة مفتاحية مختلفة."
+                ),
             )
             return False
 
@@ -208,6 +211,20 @@ class BotEngine:
         )
 
         if not filtered:
+            # Build actionable filter summary
+            filters = []
+            if category.min_discount_percent and category.min_discount_percent > 0:
+                filters.append(f"خصم ≥ {category.min_discount_percent}%")
+            if category.min_price and category.min_price > 0:
+                filters.append(f"سعر ≥ {category.min_price} ريال")
+            if category.max_price and category.max_price > 0:
+                filters.append(f"سعر ≤ {category.max_price} ريال")
+            if category.require_prime:
+                filters.append("برايم فقط")
+            if category.require_image:
+                filters.append("صورة مطلوبة")
+            filter_hint = " | ".join(filters) if filters else "—"
+
             logger.info(
                 "All %d products filtered out for '%s' — advancing.",
                 len(products), keyword.keyword,
@@ -220,7 +237,11 @@ class BotEngine:
                 level="WARNING",
                 component="engine",
                 action="all_filtered",
-                message=f"All {len(products)} products filtered out for '{keyword.keyword}'.",
+                message=(
+                    f"'{keyword.keyword}' في {category.name_ar or category.name}: "
+                    f"تم العثور على {len(products)} منتج لكن لم يطابق أي منها شروط الفئة ({filter_hint}). "
+                    f"عدّل إعدادات الفئة لتوسيع النتائج."
+                ),
             )
             return False
 
@@ -236,7 +257,11 @@ class BotEngine:
                 level="WARNING",
                 component="engine",
                 action="all_duplicates",
-                message=f"All {len(filtered)} products already published for '{keyword.keyword}'.",
+                message=(
+                    f"'{keyword.keyword}': تم العثور على {len(products)} منتج، "
+                    f"نجح {len(filtered)} منها من الفلاتر "
+                    f"لكن جميعها نُشرت من قبل."
+                ),
             )
             return False
 

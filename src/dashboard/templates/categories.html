@@ -7,7 +7,7 @@
 {% endblock %}
 
 {% block content %}
-<div x-data="categoriesPage()" x-init="loadCategories()" class="space-y-6">
+<div x-data="categoriesPage()" x-init="loadCategories(); loadWarnings()" class="space-y-6">
 
     <!-- ── Header Row ────────────────────────────────────── -->
     <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -43,6 +43,32 @@
         </button>
     </div>
 
+    <!-- ── Engine Warnings ────────────────────────────────── -->
+    <div x-show="warnings.length > 0" style="display:none"
+        class="bg-amber-50 border border-amber-200 rounded-2xl overflow-hidden">
+        <button @click="warningsOpen = !warningsOpen"
+            class="w-full px-5 py-3 flex items-center justify-between text-sm text-amber-800 hover:bg-amber-100 transition-colors">
+            <span class="flex items-center gap-2 font-medium">
+                <i data-lucide="alert-triangle" class="w-4 h-4"></i>
+                <span x-text="warnings.length + ' تنبيه من آخر عمليات البحث'"></span>
+            </span>
+            <i data-lucide="chevron-down" class="w-4 h-4 transition-transform duration-200"
+                :class="warningsOpen && 'rotate-180'"></i>
+        </button>
+        <div x-show="warningsOpen" x-collapse>
+            <div class="px-5 pb-4 space-y-2">
+                <template x-for="(w, i) in warnings" :key="i">
+                    <div class="flex items-start gap-2 text-xs text-amber-700 bg-white/60 rounded-lg px-3 py-2">
+                        <i :data-lucide="w.action === 'all_filtered' ? 'filter-x' : w.action === 'no_results' ? 'search-x' : 'copy'"
+                            class="w-3.5 h-3.5 mt-0.5 shrink-0"></i>
+                        <span x-text="w.message" class="flex-1"></span>
+                        <span class="text-amber-400 whitespace-nowrap shrink-0" x-text="timeAgo(w.created_at)"></span>
+                    </div>
+                </template>
+            </div>
+        </div>
+    </div>
+
     <!-- ── Categories List ───────────────────────────────── -->
     <div class="space-y-4">
         <template x-for="cat in categories" :key="cat.id">
@@ -55,7 +81,7 @@
                         <div class="flex items-center gap-3 flex-1 min-w-0">
                             <div class="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
                                 :class="cat.is_active ? 'bg-indigo-50' : 'bg-gray-100'">
-                                <i data-lucide="folder" class="w-5 h-5"
+                                <i :data-lucide="getCatIcon(cat.amazon_search_index)" class="w-5 h-5"
                                     :class="cat.is_active ? 'text-indigo-500' : 'text-gray-400'"></i>
                             </div>
                             <div class="min-w-0">
@@ -112,9 +138,12 @@
                                 <i data-lucide="trash-2" class="w-4 h-4"></i>
                             </button>
                             <!-- Expand arrow -->
-                            <i data-lucide="chevron-down"
-                                class="w-4 h-4 text-gray-400 transition-transform duration-200"
-                                :class="cat._open && 'rotate-180'"></i>
+                            <button @click="cat._open = !cat._open"
+                                class="p-2 rounded-lg hover:bg-gray-100 transition-colors">
+                                <i data-lucide="chevron-down"
+                                    class="w-4 h-4 text-gray-400 transition-transform duration-200"
+                                    :class="cat._open && 'rotate-180'"></i>
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -194,6 +223,18 @@
                                     إضافة
                                 </button>
                             </div>
+
+                            <!-- Suggested keywords -->
+                            <div class="mt-2">
+                                <span class="text-[10px] text-gray-400 mb-1 block">مقترحات:</span>
+                                <div class="flex flex-wrap gap-1.5">
+                                    <template x-for="kw in getSuggestedKeywords(cat)" :key="kw">
+                                        <button type="button" @click="addKeyword(cat.id, kw)"
+                                            class="text-[10px] px-2 py-1 rounded-md border border-dashed border-gray-300 text-gray-500 hover:bg-indigo-50 hover:border-indigo-300 hover:text-indigo-600 transition-all"
+                                            x-text="kw"></button>
+                                    </template>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -227,6 +268,21 @@
             <!-- Form -->
             <div class="p-6 space-y-5">
 
+                <!-- Suggested categories (only in create mode) -->
+                <template x-if="!editingCategory">
+                    <div>
+                        <label class="block text-xs font-medium text-gray-600 mb-2">فئات مقترحة</label>
+                        <div class="flex flex-wrap gap-2">
+                            <template x-for="s in suggestedCategories" :key="s.name">
+                                <button type="button" @click="applySuggestion(s)"
+                                    class="text-xs px-3 py-1.5 rounded-lg border border-gray-200 bg-gray-50 hover:bg-indigo-50 hover:border-indigo-300 hover:text-indigo-700 transition-all">
+                                    <span x-text="s.name_ar"></span>
+                                </button>
+                            </template>
+                        </div>
+                    </div>
+                </template>
+
                 <!-- Row 1: Names -->
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
@@ -250,28 +306,31 @@
                         <select x-model="form.amazon_search_index" class="w-full px-3 py-2.5 text-sm bg-gray-50 border border-gray-200 rounded-xl
                                        focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 focus:bg-white
                                        transition-all outline-none">
-                            <option value="All">All — الكل</option>
-                            <option value="Electronics">Electronics — إلكترونيات</option>
-                            <option value="Fashion">Fashion — أزياء</option>
-                            <option value="Beauty">Beauty — جمال</option>
-                            <option value="HomeAndKitchen">HomeAndKitchen — المنزل والمطبخ</option>
-                            <option value="Computers">Computers — حواسيب</option>
-                            <option value="Sports">Sports — رياضة</option>
-                            <option value="Toys">Toys — ألعاب</option>
-                            <option value="Books">Books — كتب</option>
-                            <option value="HealthPersonalCare">HealthPersonalCare — صحة وعناية</option>
-                            <option value="Automotive">Automotive — سيارات</option>
-                            <option value="Baby">Baby — أطفال</option>
-                            <option value="OfficeProducts">OfficeProducts — مكتبية</option>
-                            <option value="Tools">Tools — أدوات</option>
-                            <option value="Garden">Garden — حديقة</option>
+                            <option value="All">الكل</option>
+                            <option value="Electronics">إلكترونيات وحواسيب</option>
+                            <option value="Fashion">أزياء</option>
+                            <option value="Beauty">جمال وعناية</option>
+                            <option value="HomeAndKitchen">المنزل والمطبخ</option>
+                            <option value="SportsAndOutdoors">رياضة</option>
+                            <option value="ToysAndGames">ألعاب</option>
+                            <option value="Books">كتب</option>
+                            <option value="HealthPersonalCare">صحة وعناية</option>
+                            <option value="Automotive">سيارات</option>
+                            <option value="Baby">أطفال</option>
+                            <option value="OfficeProducts">مكتبية</option>
+                            <option value="ToolsAndHomeImprovement">أدوات ومستلزمات</option>
+                            <option value="GardenAndOutdoor">حديقة</option>
+                            <option value="GroceryAndGourmetFood">بقالة وأطعمة</option>
+                            <option value="VideoGames">ألعاب فيديو</option>
                         </select>
                     </div>
                     <div>
-                        <label class="block text-xs font-medium text-gray-600 mb-1.5">Browse Node (اختياري)</label>
-                        <input type="text" x-model="form.amazon_browse_node" placeholder="12345678" class="w-full px-3 py-2.5 text-sm bg-gray-50 border border-gray-200 rounded-xl
+                        <label class="block text-xs font-medium text-gray-600 mb-1.5">تصنيف فرعي (اختياري)</label>
+                        <input type="text" x-model="form.amazon_browse_node" placeholder="مثال: 12345678" class="w-full px-3 py-2.5 text-sm bg-gray-50 border border-gray-200 rounded-xl
                                       focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 focus:bg-white
                                       transition-all outline-none">
+                        <p class="text-[10px] text-gray-400 mt-1">رقم القسم في أمازون لتضييق البحث — اتركه فارغاً للبحث
+                            في كل القسم</p>
                     </div>
                 </div>
 
@@ -302,10 +361,11 @@
                                       transition-all outline-none">
                     </div>
                     <div>
-                        <label class="block text-xs font-medium text-gray-600 mb-1.5">ترتيب العرض</label>
+                        <label class="block text-xs font-medium text-gray-600 mb-1.5">أولوية العرض</label>
                         <input type="number" x-model.number="form.sort_order" placeholder="0" min="0" class="w-full px-3 py-2.5 text-sm bg-gray-50 border border-gray-200 rounded-xl
                                       focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 focus:bg-white
                                       transition-all outline-none">
+                        <p class="text-[10px] text-gray-400 mt-1">الفئات ذات الرقم الأصغر تظهر أولاً</p>
                     </div>
                 </div>
 
@@ -379,6 +439,8 @@
     function categoriesPage() {
         return {
             categories: [],
+            warnings: [],
+            warningsOpen: false,
             showModal: false,
             editingCategory: null,
             loading: false,
@@ -387,6 +449,71 @@
                 name: '', name_ar: '', amazon_search_index: 'All', amazon_browse_node: '',
                 min_price: 0, max_price: 0, min_discount_percent: 0,
                 require_prime: false, require_image: true, is_active: true, sort_order: 0,
+            },
+
+            _categoryIcons: {
+                'Electronics': 'smartphone',
+                'Fashion': 'shirt',
+                'Beauty': 'sparkles',
+                'HomeAndKitchen': 'chef-hat',
+                'SportsAndOutdoors': 'dumbbell',
+                'ToysAndGames': 'gamepad-2',
+                'Books': 'book-open',
+                'HealthPersonalCare': 'heart-pulse',
+                'Automotive': 'car',
+                'Baby': 'baby',
+                'OfficeProducts': 'printer',
+                'ToolsAndHomeImprovement': 'wrench',
+                'GardenAndOutdoor': 'flower-2',
+                'GroceryAndGourmetFood': 'shopping-basket',
+                'VideoGames': 'joystick',
+                'All': 'layers',
+            },
+
+            getCatIcon(searchIndex) {
+                return this._categoryIcons[searchIndex] || 'folder';
+            },
+
+            suggestedCategories: [
+                { name: 'Electronics', name_ar: 'إلكترونيات وحواسيب', amazon_search_index: 'Electronics', min_discount_percent: 15 },
+                { name: 'Fashion', name_ar: 'أزياء', amazon_search_index: 'Fashion', min_discount_percent: 20 },
+                { name: 'Beauty', name_ar: 'جمال وعناية', amazon_search_index: 'Beauty', min_discount_percent: 15 },
+                { name: 'Home & Kitchen', name_ar: 'المنزل والمطبخ', amazon_search_index: 'HomeAndKitchen', min_discount_percent: 10 },
+                { name: 'Toys & Games', name_ar: 'ألعاب', amazon_search_index: 'ToysAndGames', min_discount_percent: 15 },
+                { name: 'Sports', name_ar: 'رياضة', amazon_search_index: 'SportsAndOutdoors', min_discount_percent: 10 },
+                { name: 'Health', name_ar: 'صحة وعناية', amazon_search_index: 'HealthPersonalCare', min_discount_percent: 10 },
+                { name: 'Baby', name_ar: 'مستلزمات أطفال', amazon_search_index: 'Baby', min_discount_percent: 10 },
+            ],
+
+            _keywordSuggestions: {
+                'Electronics': ['سماعات بلوتوث', 'شاحن سريع', 'ساعة ذكية', 'سماعات أذن', 'باور بانك', 'كيبل شحن', 'ماوس لاسلكي', 'مكبر صوت', 'كاميرا مراقبة', 'تابلت', 'سبيكر بلوتوث', 'لابتوب', 'كيبورد ميكانيكي', 'شاشة كمبيوتر', 'هارد خارجي', 'ماوس قيمنق', 'كاميرا ويب'],
+                'Fashion': ['حقيبة نسائية', 'نظارة شمسية', 'ساعة رجالية', 'محفظة جلد', 'حذاء رياضي', 'عطر رجالي', 'عطر نسائي', 'حزام جلد', 'شنطة ظهر', 'قبعة', 'وشاح', 'خاتم', 'سلسلة', 'نظارات طبية'],
+                'Beauty': ['مرطب بشرة', 'واقي شمس', 'سيروم فيتامين سي', 'غسول وجه', 'كريم عين', 'ماسكارا', 'أحمر شفاه', 'مزيل عرق', 'شامبو', 'بلسم شعر', 'ماسك وجه', 'مقشر بشرة', 'كريم مرطب', 'زيت شعر'],
+                'HomeAndKitchen': ['قدر ضغط كهربائي', 'خلاط كهربائي', 'مكنسة كهربائية', 'قلاية هوائية', 'صانعة قهوة', 'طقم أواني', 'غلاية ماء', 'محضرة طعام', 'فلتر ماء', 'مكواة بخار', 'طقم ملاعق', 'صحون', 'منظم أدراج', 'إضاءة ذكية'],
+                'ToysAndGames': ['ليقو', 'بازل أطفال', 'سيارة ريموت', 'ألعاب تعليمية', 'دراجة أطفال', 'ألعاب مائية', 'ألعاب بناء', 'روبوت ذكي', 'طائرة درون', 'كرة قدم', 'مسدس نيرف', 'صلصال', 'رمل سحري'],
+                'SportsAndOutdoors': ['حذاء رياضي', 'سجادة يوقا', 'دمبل', 'حبل قفز', 'زجاجة ماء رياضية', 'ساعة رياضية', 'حقيبة رياضية', 'مقاومة تمارين', 'سكوتر', 'دراجة هوائية', 'قفازات رياضية', 'خوذة دراجة', 'ملابس رياضية'],
+                'HealthPersonalCare': ['فرشاة أسنان كهربائية', 'ميزان ذكي', 'جهاز تدليك', 'فيتامينات', 'معقم يدين', 'جهاز قياس ضغط', 'حبوب أوميقا', 'كمامات', 'ترمومتر', 'كريم عضلات', 'مكمل غذائي', 'بروتين'],
+                'Baby': ['حفاضات', 'رضاعة', 'كرسي سيارة أطفال', 'عربة أطفال', 'مناديل مبللة', 'حليب أطفال', 'ملابس مواليد', 'سرير أطفال', 'حاملة أطفال', 'مقعد طعام', 'ألعاب رضع', 'شفاط حليب', 'لهاية'],
+                'Automotive': ['حامل جوال سيارة', 'شاحن سيارة', 'كاميرا سيارة', 'معطر سيارة', 'غطاء مقاعد', 'مظلة سيارة', 'منظم سيارة'],
+                'Books': ['كتب تطوير ذات', 'روايات عربية', 'كتب أطفال', 'كتب طبخ', 'كتب إنجليزية', 'كتب دينية'],
+                'OfficeProducts': ['طابعة', 'أوراق طباعة', 'حبر طابعة', 'آلة حاسبة', 'أقلام', 'دفاتر', 'منظم مكتب'],
+                'ToolsAndHomeImprovement': ['طقم مفكات', 'دريل كهربائي', 'شريط قياس', 'مسدس شمع', 'طقم عدة', 'منشار كهربائي'],
+                'GardenAndOutdoor': ['خرطوم ماء', 'مقص حديقة', 'بذور زراعية', 'أصيص زرع', 'إضاءة حديقة', 'سماد عضوي'],
+                'All': ['عروض اليوم', 'تخفيضات', 'أفضل المبيعات', 'منتجات جديدة', 'عروض حصرية', 'أكواد خصم'],
+            },
+
+            applySuggestion(s) {
+                this.form.name = s.name;
+                this.form.name_ar = s.name_ar;
+                this.form.amazon_search_index = s.amazon_search_index;
+                this.form.min_discount_percent = s.min_discount_percent || 0;
+            },
+
+            getSuggestedKeywords(cat) {
+                const idx = cat.amazon_search_index || 'All';
+                const all = this._keywordSuggestions[idx] || this._keywordSuggestions['All'] || [];
+                const existing = new Set((cat.keywords || []).map(k => k.keyword));
+                return all.filter(k => !existing.has(k));
             },
 
             async loadCategories() {
@@ -398,6 +525,22 @@
                     }));
                 } catch (e) { }
                 this.loading = false;
+            },
+
+            async loadWarnings() {
+                try {
+                    this.warnings = await apiCall('/api/categories/warnings') || [];
+                    this.$nextTick(() => lucide.createIcons());
+                } catch (e) { }
+            },
+
+            timeAgo(dateStr) {
+                if (!dateStr) return '';
+                const diff = (Date.now() - new Date(dateStr).getTime()) / 1000;
+                if (diff < 60) return 'الآن';
+                if (diff < 3600) return Math.floor(diff / 60) + ' د';
+                if (diff < 86400) return Math.floor(diff / 3600) + ' س';
+                return Math.floor(diff / 86400) + ' ي';
             },
 
             openCreateModal() {
@@ -473,15 +616,23 @@
                         keyword: keyword.trim(), sort_order: 0
                     });
                     showToast('تم إضافة الكلمة المفتاحية', 'success');
-                    await this.loadCategories();
+                    await this._reloadKeepOpen();
                 } catch (e) { }
+            },
+
+            async _reloadKeepOpen() {
+                const openIds = new Set(this.categories.filter(c => c._open).map(c => c.id));
+                const data = await apiCall('/api/categories');
+                this.categories = (data || []).map(c => ({
+                    ...c, _open: openIds.has(c.id), _newKeyword: ''
+                }));
             },
 
             async toggleKeyword(kwId, currentState) {
                 try {
                     await apiCall(`/api/keywords/${kwId}`, 'PUT', { is_active: !currentState });
                     showToast(!currentState ? 'تم تفعيل الكلمة' : 'تم تعطيل الكلمة', 'info');
-                    await this.loadCategories();
+                    await this._reloadKeepOpen();
                 } catch (e) { }
             },
 
@@ -491,7 +642,7 @@
                 try {
                     await apiCall(`/api/keywords/${kwId}`, 'DELETE');
                     showToast('تم حذف الكلمة المفتاحية', 'success');
-                    await this.loadCategories();
+                    await this._reloadKeepOpen();
                 } catch (e) { }
             },
         };
