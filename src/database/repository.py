@@ -613,14 +613,31 @@ class Repository:
                 )
             ).scalar() or 0
 
-            # Failed count (all time)
-            failed_count = (
+            # Failed count — Telegram send failures
+            send_failed = (
                 await session.execute(
                     select(func.count())
                     .select_from(PublishedProduct)
                     .where(PublishedProduct.status == "failed")
                 )
             ).scalar() or 0
+
+            # Search failures — keywords that didn't produce a post
+            search_failed = (
+                await session.execute(
+                    select(func.count())
+                    .select_from(SystemLog)
+                    .where(
+                        SystemLog.component == "engine",
+                        SystemLog.level == "WARNING",
+                        SystemLog.action.in_(
+                            ["all_filtered", "no_results", "all_duplicates"]
+                        ),
+                    )
+                )
+            ).scalar() or 0
+
+            failed_count = send_failed + search_failed
 
             # Success rate
             total_all = total_published + failed_count
