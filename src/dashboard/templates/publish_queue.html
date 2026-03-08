@@ -1,0 +1,373 @@
+{% extends "base.html" %}
+
+{% block title %}ترتيب النشر — بوت أمازون{% endblock %}
+
+{% block content %}
+<style>
+    .queue-item {
+        user-select: none;
+        -webkit-user-select: none;
+    }
+
+    .drag-handle {
+        touch-action: none;
+        -webkit-touch-callout: none;
+    }
+
+    .sortable-ghost {
+        opacity: 0.3 !important;
+    }
+
+    .sortable-chosen {
+        outline: 2px solid #818cf8 !important;
+        outline-offset: 1px;
+    }
+
+    /* Mobile: show move buttons, hide drag handle */
+    @media (max-width: 768px) {
+        .drag-handle {
+            display: none !important;
+        }
+
+        .move-buttons {
+            display: flex !important;
+        }
+    }
+
+    /* Desktop: show drag handle, hide move buttons */
+    @media (min-width: 769px) {
+        .move-buttons {
+            display: none !important;
+        }
+    }
+</style>
+<div class="max-w-3xl mx-auto" x-data="publishQueue()" x-init="loadQueue()">
+
+    <!-- Header -->
+    <div class="flex flex-col gap-4 mb-6">
+        <div class="flex items-center justify-between">
+            <div>
+                <h1 class="text-xl font-extrabold text-gray-800 flex items-center gap-2">
+                    <i data-lucide="list-ordered" class="w-6 h-6 text-indigo-500"></i>
+                    ترتيب النشر
+                </h1>
+                <p class="text-sm text-gray-500 mt-1">اسحب الكلمات المفتاحية لترتيب أولوية النشر</p>
+            </div>
+
+            <!-- Mode toggle -->
+            <button @click="toggleMode()"
+                class="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold transition-all duration-200 shadow-sm"
+                :class="mode === 'random'
+                    ? 'bg-purple-50 text-purple-700 hover:bg-purple-100 border border-purple-200'
+                    : 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200'">
+                <i x-show="mode === 'random'" data-lucide="shuffle" class="w-4 h-4"></i>
+                <i x-show="mode !== 'random'" data-lucide="arrow-down-0-1" class="w-4 h-4"></i>
+                <span x-text="mode === 'random' ? 'عشوائي' : 'ترتيب يدوي'"></span>
+            </button>
+        </div>
+
+        <!-- Quick sort buttons -->
+        <div x-show="mode !== 'random' && displayKeywords.length > 1" class="flex flex-wrap gap-2">
+            <button @click="sortByCategory()"
+                class="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-bold bg-white border border-gray-200 text-gray-600 hover:bg-gray-50 hover:border-gray-300 transition-colors shadow-sm">
+                <i data-lucide="layers" class="w-3.5 h-3.5"></i>
+                ترتيب حسب الفئة
+            </button>
+            <button @click="sortAlphabetically()"
+                class="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-bold bg-white border border-gray-200 text-gray-600 hover:bg-gray-50 hover:border-gray-300 transition-colors shadow-sm">
+                <i data-lucide="arrow-down-a-z" class="w-3.5 h-3.5"></i>
+                ترتيب أبجدي
+            </button>
+            <button @click="resetOrder()"
+                class="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-bold bg-white border border-red-200 text-red-500 hover:bg-red-50 hover:border-red-300 transition-colors shadow-sm">
+                <i data-lucide="rotate-ccw" class="w-3.5 h-3.5"></i>
+                إعادة ضبط
+            </button>
+        </div>
+    </div>
+
+    <!-- Random mode notice -->
+    <div x-show="mode === 'random'" x-transition
+        class="mb-4 bg-purple-50 border border-purple-200 rounded-xl px-4 py-3 flex items-center gap-2">
+        <i data-lucide="shuffle" class="w-4 h-4 text-purple-500 shrink-0"></i>
+        <span class="text-sm text-purple-700">
+            الوضع العشوائي مفعّل — الترتيب أدناه يمثل ترتيباً عشوائياً محتملاً. عند العودة لليدوي سيتم استعادة ترتيبك
+            السابق.
+        </span>
+    </div>
+
+    <!-- Loading -->
+    <div x-show="loading" class="text-center py-12">
+        <div class="inline-block w-8 h-8 border-4 border-indigo-200 border-t-indigo-500 rounded-full animate-spin">
+        </div>
+        <p class="text-sm text-gray-500 mt-3">جارِ التحميل...</p>
+    </div>
+
+    <!-- Empty state -->
+    <div x-show="!loading && displayKeywords.length === 0"
+        class="text-center py-16 bg-white rounded-2xl shadow-sm border border-gray-100">
+        <i data-lucide="inbox" class="w-12 h-12 text-gray-300 mx-auto mb-3"></i>
+        <p class="text-gray-500 font-medium">لا توجد كلمات مفتاحية نشطة</p>
+        <p class="text-xs text-gray-400 mt-1">أضف كلمات مفتاحية من صفحة الفئات أولاً</p>
+    </div>
+
+    <!-- Keyword list -->
+    <div x-show="!loading && displayKeywords.length > 0" id="sortable-queue"
+        class="space-y-2 bg-white rounded-2xl shadow-sm border border-gray-100 p-4">
+    </div>
+
+    <!-- Footer info -->
+    <div x-show="!loading && displayKeywords.length > 0" class="mt-4 text-center">
+        <p class="text-xs text-gray-400">
+            <span x-text="displayKeywords.length"></span> كلمة مفتاحية نشطة —
+            <span x-show="mode !== 'random'">الكلمة التالية: #<span x-text="currentIndex + 1"></span></span>
+            <span x-show="mode === 'random'">الوضع العشوائي مفعّل</span>
+        </p>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
+<script>
+    function publishQueue() {
+        return {
+            keywords: [],
+            displayKeywords: [],
+            mode: 'sort_order',
+            currentIndex: 0,
+            loading: true,
+            _sortable: null,
+            _saving: false,
+
+            _colors: [
+                'bg-blue-50 text-blue-700',
+                'bg-emerald-50 text-emerald-700',
+                'bg-amber-50 text-amber-700',
+                'bg-rose-50 text-rose-700',
+                'bg-violet-50 text-violet-700',
+                'bg-cyan-50 text-cyan-700',
+                'bg-orange-50 text-orange-700',
+                'bg-teal-50 text-teal-700',
+                'bg-pink-50 text-pink-700',
+                'bg-lime-50 text-lime-700',
+            ],
+            _catColorMap: {},
+
+            categoryColor(catId) {
+                if (!this._catColorMap[catId]) {
+                    const idx = Object.keys(this._catColorMap).length % this._colors.length;
+                    this._catColorMap[catId] = this._colors[idx];
+                }
+                return this._catColorMap[catId];
+            },
+
+            async loadQueue() {
+                this.loading = true;
+                try {
+                    const data = await apiCall('/api/publish-queue');
+                    this.keywords = data.keywords || [];
+                    this.mode = data.mode || 'sort_order';
+                    this.currentIndex = data.current_index || 0;
+                    this.updateDisplay();
+                } catch (e) { console.error('Failed to load queue', e); }
+                this.loading = false;
+                setTimeout(() => this.initSortable(), 100);
+            },
+
+            updateDisplay() {
+                if (this.mode === 'random') {
+                    this.displayKeywords = [...this.keywords];
+                    for (let i = this.displayKeywords.length - 1; i > 0; i--) {
+                        const j = Math.floor(Math.random() * (i + 1));
+                        [this.displayKeywords[i], this.displayKeywords[j]] =
+                            [this.displayKeywords[j], this.displayKeywords[i]];
+                    }
+                } else {
+                    this.displayKeywords = [...this.keywords];
+                }
+                this.renderList();
+            },
+
+            renderList() {
+                const el = document.getElementById('sortable-queue');
+                if (!el) return;
+                el.innerHTML = '';
+                const self = this;
+
+                this.displayKeywords.forEach((kw, idx) => {
+                    const isNext = idx === this.currentIndex && this.mode !== 'random';
+                    const bgClass = isNext
+                        ? 'bg-indigo-50 border-indigo-200 shadow-sm'
+                        : 'bg-gray-50 border-gray-200';
+                    const numClass = isNext
+                        ? 'bg-indigo-500 text-white'
+                        : 'bg-white text-gray-400 border border-gray-200';
+                    const catColor = this.categoryColor(kw.category_id);
+                    const catLabel = kw.category_name_ar || kw.category_name;
+                    const isManual = this.mode !== 'random';
+                    const total = this.displayKeywords.length;
+
+                    const div = document.createElement('div');
+                    div.className = `queue-item flex items-center gap-3 px-4 py-3 rounded-xl border ${isManual ? 'cursor-grab active:cursor-grabbing' : ''} ${bgClass}`;
+                    div.dataset.id = kw.id;
+
+                    let html = '';
+
+                    // Drag handle (desktop only)
+                    if (isManual) {
+                        html += `<div class="drag-handle text-gray-300 hover:text-gray-500 shrink-0">
+                            <i data-lucide="grip-vertical" class="w-5 h-5"></i>
+                        </div>`;
+                    }
+
+                    html += `<span class="w-7 h-7 flex items-center justify-center rounded-lg text-xs font-bold shrink-0 ${numClass}">${idx + 1}</span>`;
+                    html += `<span class="flex-1 font-medium text-sm text-gray-800 truncate">${kw.keyword}</span>`;
+                    html += `<span class="px-2.5 py-1 rounded-lg text-[10px] font-bold shrink-0 ${catColor}">${catLabel}</span>`;
+                    html += `<span class="text-[10px] text-gray-400 shrink-0">${kw.total_uses || 0}×</span>`;
+
+                    // Move buttons (mobile only)
+                    if (isManual) {
+                        html += `<div class="move-buttons flex flex-col gap-0.5 shrink-0" style="display:none;">
+                            <button class="move-up p-1 rounded hover:bg-indigo-100 text-gray-400 hover:text-indigo-600 ${idx === 0 ? 'invisible' : ''}" data-idx="${idx}">
+                                <i data-lucide="chevron-up" class="w-4 h-4"></i>
+                            </button>
+                            <button class="move-down p-1 rounded hover:bg-indigo-100 text-gray-400 hover:text-indigo-600 ${idx === total - 1 ? 'invisible' : ''}" data-idx="${idx}">
+                                <i data-lucide="chevron-down" class="w-4 h-4"></i>
+                            </button>
+                        </div>`;
+                    }
+
+                    if (isNext) {
+                        html += `<span class="text-[10px] font-bold text-indigo-600 bg-indigo-100 px-2 py-0.5 rounded-full shrink-0">التالي</span>`;
+                    }
+
+                    div.innerHTML = html;
+                    el.appendChild(div);
+                });
+
+                // Bind mobile move buttons
+                el.querySelectorAll('.move-up').forEach(btn => {
+                    btn.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        self.moveItem(parseInt(btn.dataset.idx), parseInt(btn.dataset.idx) - 1);
+                    });
+                });
+                el.querySelectorAll('.move-down').forEach(btn => {
+                    btn.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        self.moveItem(parseInt(btn.dataset.idx), parseInt(btn.dataset.idx) + 1);
+                    });
+                });
+
+                if (typeof lucide !== 'undefined') lucide.createIcons();
+            },
+
+            async moveItem(fromIdx, toIdx) {
+                if (toIdx < 0 || toIdx >= this.keywords.length || this._saving) return;
+                [this.keywords[fromIdx], this.keywords[toIdx]] = [this.keywords[toIdx], this.keywords[fromIdx]];
+                this.displayKeywords = [...this.keywords];
+                this.renderList();
+                this.initSortable();
+                await this.saveOrder();
+            },
+
+            // ── Sort helpers ─────────────────────────────────────
+
+            async sortByCategory() {
+                this.keywords.sort((a, b) => {
+                    if (a.category_id !== b.category_id) return a.category_id - b.category_id;
+                    return (a.sort_order || 0) - (b.sort_order || 0);
+                });
+                this.displayKeywords = [...this.keywords];
+                this.renderList();
+                this.initSortable();
+                await this.saveOrder();
+            },
+
+            async sortAlphabetically() {
+                this.keywords.sort((a, b) => a.keyword.localeCompare(b.keyword, 'ar'));
+                this.displayKeywords = [...this.keywords];
+                this.renderList();
+                this.initSortable();
+                await this.saveOrder();
+            },
+
+            async resetOrder() {
+                this.keywords.sort((a, b) => a.id - b.id);
+                this.displayKeywords = [...this.keywords];
+                this.renderList();
+                this.initSortable();
+                await this.saveOrder();
+                showToast('تم إعادة ضبط الترتيب', 'info');
+            },
+
+            // ── Persistence ──────────────────────────────────────
+
+            async saveOrder() {
+                if (this._saving) return;
+                this._saving = true;
+                const ids = this.keywords.map(kw => kw.id);
+                try {
+                    await apiCall('/api/publish-queue/reorder', 'PUT', { keyword_ids: ids });
+                    showToast('تم تحديث الترتيب', 'info');
+                } catch (e) {
+                    showToast('فشل حفظ الترتيب', 'error');
+                    await this.loadQueue();
+                }
+                this._saving = false;
+            },
+
+            initSortable() {
+                const el = document.getElementById('sortable-queue');
+                if (!el) return;
+
+                if (this._sortable) {
+                    this._sortable.destroy();
+                    this._sortable = null;
+                }
+
+                if (this.mode === 'random') return;
+
+                const self = this;
+
+                this._sortable = new Sortable(el, {
+                    animation: 100,
+                    handle: '.drag-handle',
+                    delay: 0,
+                    ghostClass: 'sortable-ghost',
+                    chosenClass: 'sortable-chosen',
+                    onEnd: async (evt) => {
+                        // Read new DOM order
+                        const items = el.querySelectorAll('.queue-item');
+                        const newIds = Array.from(items).map(item => parseInt(item.dataset.id));
+
+                        // Update state without re-rendering (avoids touch drop glitch)
+                        const idMap = {};
+                        self.keywords.forEach(kw => idMap[kw.id] = kw);
+                        self.keywords = newIds.map(id => idMap[id]).filter(Boolean);
+                        self.displayKeywords = [...self.keywords];
+
+                        // Delayed re-render to avoid stealing touch context
+                        setTimeout(() => {
+                            self.renderList();
+                            self.initSortable();
+                        }, 300);
+
+                        await self.saveOrder();
+                    },
+                });
+            },
+
+            async toggleMode() {
+                const newMode = this.mode === 'random' ? 'sort_order' : 'random';
+                try {
+                    await apiCall('/api/publish-queue/mode', 'PUT', { mode: newMode });
+                    this.mode = newMode;
+                    this.updateDisplay();
+                    setTimeout(() => this.initSortable(), 50);
+                    showToast(newMode === 'random' ? 'الترتيب عشوائي الآن' : 'الترتيب يدوي الآن', 'info');
+                } catch (e) { }
+            },
+        };
+    }
+</script>
+{% endblock %}

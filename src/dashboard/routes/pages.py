@@ -249,6 +249,19 @@ async def categories_page(
     )
 
 
+@router.get("/publish-queue", response_class=HTMLResponse)
+async def publish_queue_page(
+    request: Request,
+    user: dict = Depends(get_current_user),
+):
+    """Global keyword ordering page with drag-and-drop."""
+    templates = request.app.state.templates
+    return templates.TemplateResponse(
+        "publish_queue.html",
+        {"request": request, "user": user},
+    )
+
+
 @router.get("/schedule", response_class=HTMLResponse)
 async def schedule_page(
     request: Request,

@@ -175,56 +175,23 @@
 
                         <!-- Keywords section -->
                         <div>
-                            <h4 class="text-xs font-bold text-gray-600 mb-3 flex items-center justify-between">
-                                <span class="flex items-center gap-1.5">
-                                    <i data-lucide="tag" class="w-3.5 h-3.5 text-gray-500"></i>
-                                    الكلمات المفتاحية
-                                </span>
-                                <!-- Keyword order toggle -->
-                                <button @click="toggleKeywordOrder(cat)"
-                                    class="inline-flex items-center gap-1 text-[10px] px-2 py-1 rounded-lg transition-colors"
-                                    :class="cat.keyword_order === 'random'
-                                        ? 'bg-purple-50 text-purple-600 hover:bg-purple-100'
-                                        : 'bg-gray-100 text-gray-500 hover:bg-gray-200'"
-                                    :title="cat.keyword_order === 'random' ? 'الترتيب عشوائي — اضغط للتغيير إلى يدوي' : 'ترتيب يدوي — اضغط للتغيير إلى عشوائي'">
-                                    <i x-show="cat.keyword_order === 'random'" data-lucide="shuffle"
-                                        class="w-3 h-3"></i>
-                                    <i x-show="cat.keyword_order !== 'random'" data-lucide="arrow-down-0-1"
-                                        class="w-3 h-3"></i>
-                                    <span x-text="cat.keyword_order === 'random' ? 'عشوائي' : 'يدوي'"></span>
-                                </button>
+                            <h4 class="text-xs font-bold text-gray-600 mb-3 flex items-center gap-1.5">
+                                <i data-lucide="tag" class="w-3.5 h-3.5 text-gray-500"></i>
+                                الكلمات المفتاحية
                             </h4>
 
                             <!-- Keywords list -->
-                            <div class="space-y-1.5 mb-3">
-                                <template x-for="(kw, kwIdx) in sortedKeywords(cat)" :key="kw.id">
-                                    <div class="group flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-xs font-medium transition-all"
+                            <div class="flex flex-wrap gap-2 mb-3">
+                                <template x-for="kw in (cat.keywords || [])" :key="kw.id">
+                                    <div class="group inline-flex items-center gap-1.5 rounded-full pl-2 pr-1 py-1 text-xs font-medium transition-all relative"
                                         :class="kw.is_active
                                             ? 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100'
                                             : 'bg-gray-100 text-gray-400 line-through'">
-                                        <!-- Order number -->
-                                        <span x-show="cat.keyword_order !== 'random'"
-                                            class="w-5 h-5 flex items-center justify-center rounded-md bg-white text-[10px] font-bold text-gray-400 border border-gray-200 shrink-0"
-                                            x-text="kwIdx + 1"></span>
-                                        <!-- Keyword text -->
-                                        <span class="flex-1" x-text="kw.keyword"></span>
+                                        <span x-text="kw.keyword"></span>
                                         <!-- Stats tooltip -->
                                         <span
                                             class="hidden group-hover:flex absolute -top-8 right-0 bg-gray-800 text-white text-[10px] px-2 py-1 rounded-lg whitespace-nowrap z-10"
                                             x-text="'استُخدمت ' + (kw.total_uses || 0) + ' مرة'"></span>
-                                        <!-- Move up -->
-                                        <button x-show="cat.keyword_order !== 'random' && kwIdx > 0"
-                                            @click="moveKeyword(cat, kwIdx, -1)"
-                                            class="p-0.5 rounded hover:bg-white/70 transition-colors opacity-0 group-hover:opacity-100">
-                                            <i data-lucide="chevron-up" class="w-3 h-3"></i>
-                                        </button>
-                                        <!-- Move down -->
-                                        <button
-                                            x-show="cat.keyword_order !== 'random' && kwIdx < sortedKeywords(cat).length - 1"
-                                            @click="moveKeyword(cat, kwIdx, 1)"
-                                            class="p-0.5 rounded hover:bg-white/70 transition-colors opacity-0 group-hover:opacity-100">
-                                            <i data-lucide="chevron-down" class="w-3 h-3"></i>
-                                        </button>
                                         <!-- Toggle -->
                                         <button @click="toggleKeyword(kw.id, kw.is_active)"
                                             class="p-0.5 rounded-full hover:bg-white/50 transition-colors"
@@ -686,34 +653,8 @@
                     await this._reloadKeepOpen();
                 } catch (e) { }
             },
-
-            sortedKeywords(cat) {
-                return [...(cat.keywords || [])].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
-            },
-
-            async moveKeyword(cat, fromIdx, direction) {
-                const sorted = this.sortedKeywords(cat);
-                const toIdx = fromIdx + direction;
-                if (toIdx < 0 || toIdx >= sorted.length) return;
-                // Swap
-                [sorted[fromIdx], sorted[toIdx]] = [sorted[toIdx], sorted[fromIdx]];
-                const keyword_ids = sorted.map(k => k.id);
-                try {
-                    await apiCall(`/api/categories/${cat.id}/keywords/reorder`, 'PUT', { keyword_ids });
-                    showToast('تم تحديث الترتيب', 'info');
-                    await this._reloadKeepOpen();
-                } catch (e) { }
-            },
-
-            async toggleKeywordOrder(cat) {
-                const newOrder = cat.keyword_order === 'random' ? 'sort_order' : 'random';
-                try {
-                    await apiCall(`/api/categories/${cat.id}`, 'PUT', { keyword_order: newOrder });
-                    cat.keyword_order = newOrder;
-                    showToast(newOrder === 'random' ? 'الترتيب عشوائي الآن' : 'الترتيب يدوي الآن', 'info');
-                } catch (e) { }
-            },
         };
+
     }
 </script>
 {% endblock %}

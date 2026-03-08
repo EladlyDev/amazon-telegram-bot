@@ -54,9 +54,6 @@ class Category(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     sort_order: Mapped[int] = mapped_column(Integer, default=0)
     rotation_index: Mapped[int] = mapped_column(Integer, default=0)
-    keyword_order: Mapped[str] = mapped_column(
-        String(20), default="sort_order", server_default="sort_order"
-    )
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow

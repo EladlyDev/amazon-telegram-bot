@@ -203,16 +203,24 @@ class Repository:
             await session.delete(kw)
             return True
 
-    async def reorder_keywords(
-        self, category_id: int, keyword_ids: list[int]
-    ) -> None:
-        """Update ``sort_order`` for keywords based on the order of *keyword_ids*."""
+    async def get_global_publish_queue(self) -> list[Keyword]:
+        """Return all active keywords from active categories, sorted by sort_order."""
+        async with get_session() as session:
+            stmt = (
+                select(Keyword)
+                .join(Category, Keyword.category_id == Category.id)
+                .options(selectinload(Keyword.category))
+                .where(Keyword.is_active.is_(True), Category.is_active.is_(True))
+                .order_by(Keyword.sort_order)
+            )
+            result = await session.execute(stmt)
+            return list(result.scalars().unique().all())
+
+    async def reorder_global_queue(self, keyword_ids: list[int]) -> None:
+        """Bulk-update ``sort_order`` for keywords based on position in *keyword_ids*."""
         async with get_session() as session:
             for idx, kw_id in enumerate(keyword_ids):
-                stmt = (
-                    select(Keyword)
-                    .where(Keyword.id == kw_id, Keyword.category_id == category_id)
-                )
+                stmt = select(Keyword).where(Keyword.id == kw_id)
                 result = await session.execute(stmt)
                 kw = result.scalars().first()
                 if kw:

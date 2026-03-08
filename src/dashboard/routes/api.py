@@ -314,25 +314,75 @@ async def delete_keyword(
     return {"status": "ok"}
 
 
-@router.put("/categories/{category_id}/keywords/reorder")
-async def reorder_keywords(
-    category_id: int,
+# ────────────────────────────────────────────────────────────
+#  PUBLISH QUEUE
+# ────────────────────────────────────────────────────────────
+
+
+@router.get("/publish-queue")
+async def get_publish_queue(
     request: Request,
     _user: dict = Depends(get_current_user),
 ):
-    """Reorder keywords within a category.
+    """Return the global publish queue — all active keywords ordered by sort_order."""
+    repo = request.app.state.repo
+    keywords = await repo.get_global_publish_queue()
+    index_str = await repo.get_setting("publishing.queue_index")
+    mode = await repo.get_setting("publishing.keyword_order") or "sort_order"
+    try:
+        current_index = int(index_str) if index_str else 0
+    except (ValueError, TypeError):
+        current_index = 0
+    if keywords:
+        current_index %= len(keywords)
 
-    Expects ``{"keyword_ids": [3, 1, 2]}`` — the order of IDs
-    determines the new ``sort_order`` values.
-    """
+    return {
+        "mode": mode,
+        "current_index": current_index,
+        "keywords": [
+            {
+                "id": kw.id,
+                "keyword": kw.keyword,
+                "sort_order": kw.sort_order,
+                "is_active": kw.is_active,
+                "total_uses": kw.total_uses,
+                "category_id": kw.category_id,
+                "category_name": kw.category.name if kw.category else "",
+                "category_name_ar": kw.category.name_ar if kw.category else "",
+            }
+            for kw in keywords
+        ],
+    }
+
+
+@router.put("/publish-queue/reorder")
+async def reorder_publish_queue(
+    request: Request,
+    _user: dict = Depends(get_current_user),
+):
+    """Reorder the global publish queue."""
     repo = request.app.state.repo
     body = await request.json()
     keyword_ids: list[int] = body.get("keyword_ids", [])
     if not keyword_ids:
         raise HTTPException(status_code=400, detail="keyword_ids required")
-
-    await repo.reorder_keywords(category_id, keyword_ids)
+    await repo.reorder_global_queue(keyword_ids)
     return {"status": "ok"}
+
+
+@router.put("/publish-queue/mode")
+async def set_publish_queue_mode(
+    request: Request,
+    _user: dict = Depends(get_current_user),
+):
+    """Set publish queue mode: 'sort_order' (manual) or 'random'."""
+    repo = request.app.state.repo
+    body = await request.json()
+    mode = body.get("mode", "sort_order")
+    if mode not in ("sort_order", "random"):
+        raise HTTPException(status_code=400, detail="Invalid mode")
+    await repo.set_setting("publishing.keyword_order", mode)
+    return {"status": "ok", "mode": mode}
 
 
 # ────────────────────────────────────────────────────────────

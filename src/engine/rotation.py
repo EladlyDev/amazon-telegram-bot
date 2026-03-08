@@ -1,58 +1,68 @@
-"""Round-robin rotation across categories and their keywords.
+"""Global keyword publish queue.
 
-Ensures even distribution of Amazon searches by cycling through
-categories in order, and within each category rotating through
-its active keywords.
+Instead of per-category round-robin, this provides a flat, ordered
+queue of all active keywords from active categories.  The admin can
+drag-and-drop to reorder the global queue via the dashboard.
 """
 
 from __future__ import annotations
 
 import logging
+import random as _random
 
 from src.database.models import Category, Keyword
 from src.database.repository import Repository
 
 logger = logging.getLogger(__name__)
 
+_PUBLISH_INDEX_KEY = "publishing.queue_index"
+_KEYWORD_ORDER_KEY = "publishing.keyword_order"
+
 
 class CategoryRotator:
-    """Round-robin rotator for categories and keywords.
+    """Global keyword queue rotator.
 
-    Cycle example with 2 categories
-    (Electronics: [kw1, kw2], Fashion: [kw3])::
-
-        Call 1 → Electronics, kw1
-        Call 2 → Electronics, kw2
-        Call 3 → Fashion, kw3
-        Call 4 → Electronics, kw1  (cycle restarts)
+    Loads all active keywords from active categories as a flat list,
+    sorted by ``Keyword.sort_order``.  Supports manual (ordered) and
+    random modes via a global ``publishing.keyword_order`` setting.
     """
 
     def __init__(self, repository: Repository) -> None:
         self._repo = repository
-        self._categories: list[Category] = []
-        self._current_cat_index: int = 0
-        self._initialized: bool = False
+        self._queue: list[Keyword] = []
+        self._current_index: int = 0
+        self._order_mode: str = "sort_order"
 
     # ────────────────────────────────────────────────────────
     #  Loading
     # ────────────────────────────────────────────────────────
 
     async def _ensure_loaded(self) -> None:
-        """Reload active categories from DB every cycle to pick up changes."""
+        """Reload queue from DB on every call to pick up changes."""
         await self.reload()
 
     async def reload(self) -> None:
-        """(Re)load active categories from the database."""
-        old_index = self._current_cat_index
-        self._categories = await self._repo.get_active_categories()
-        # Preserve position if possible, clamp to valid range
-        if self._categories:
-            self._current_cat_index = old_index % len(self._categories)
-        else:
-            self._current_cat_index = 0
-        self._initialized = True
+        """(Re)load the global publish queue from the database."""
+        self._queue = await self._repo.get_global_publish_queue()
+        self._order_mode = (
+            await self._repo.get_setting(_KEYWORD_ORDER_KEY) or "sort_order"
+        )
+
+        # Read persisted index
+        idx_str = await self._repo.get_setting(_PUBLISH_INDEX_KEY)
+        try:
+            self._current_index = int(idx_str) if idx_str else 0
+        except (ValueError, TypeError):
+            self._current_index = 0
+
+        if self._queue:
+            self._current_index %= len(self._queue)
+
         logger.debug(
-            "Rotator loaded %d active categories.", len(self._categories)
+            "Queue loaded: %d keywords, mode=%s, index=%d.",
+            len(self._queue),
+            self._order_mode,
+            self._current_index,
         )
 
     # ────────────────────────────────────────────────────────
@@ -62,82 +72,43 @@ class CategoryRotator:
     async def get_next(self) -> tuple[Category | None, Keyword | None]:
         """Return the next ``(category, keyword)`` pair without advancing.
 
-        Returns ``(None, None)`` if no active categories or keywords exist.
+        Returns ``(None, None)`` if the queue is empty.
         """
         await self._ensure_loaded()
 
-        if not self._categories:
+        if not self._queue:
             return None, None
 
-        # Safety: wrap index
-        self._current_cat_index %= len(self._categories)
-        category = self._categories[self._current_cat_index]
-
-        # Get active keywords for this category
-        active_keywords = [kw for kw in category.keywords if kw.is_active]
-        if not active_keywords:
-            logger.warning(
-                "Category '%s' has no active keywords.", category.name
-            )
-            return category, None
-
-        # Sort or shuffle based on category's keyword_order setting
-        order_mode = getattr(category, "keyword_order", "sort_order")
-        if order_mode == "random":
-            import random
-            random.shuffle(active_keywords)
-            keyword = active_keywords[0]
+        if self._order_mode == "random":
+            keyword = _random.choice(self._queue)
         else:
-            active_keywords.sort(key=lambda k: k.sort_order)
-            kw_index = category.rotation_index % len(active_keywords)
-            keyword = active_keywords[kw_index]
+            keyword = self._queue[self._current_index]
+
+        category = keyword.category
 
         logger.debug(
-            "Next rotation: [%s] keyword '%s' (index %d/%d, order=%s)",
-            category.name,
+            "Next publish: '%s' from [%s] (pos %d/%d, mode=%s)",
             keyword.keyword,
-            active_keywords.index(keyword) + 1,
-            len(active_keywords),
-            order_mode,
+            category.name if category else "?",
+            self._current_index + 1,
+            len(self._queue),
+            self._order_mode,
         )
         return category, keyword
 
     async def advance(self) -> None:
-        """Advance to the next keyword/category after a successful use.
-
-        1. Increment the current category's ``rotation_index``.
-        2. Persist to the database.
-        3. If all keywords in the category have been used, reset to 0
-           and move to the next category.
-        """
+        """Advance to the next keyword after a successful publish."""
         await self._ensure_loaded()
 
-        if not self._categories:
+        if not self._queue:
             return
 
-        self._current_cat_index %= len(self._categories)
-        category = self._categories[self._current_cat_index]
+        new_index = (self._current_index + 1) % len(self._queue)
+        self._current_index = new_index
+        await self._repo.set_setting(_PUBLISH_INDEX_KEY, str(new_index))
 
-        active_keywords = [kw for kw in category.keywords if kw.is_active]
-        if not active_keywords:
-            # Skip to next category
-            self._current_cat_index = (
-                (self._current_cat_index + 1) % len(self._categories)
-            )
-            return
-
-        new_index = category.rotation_index + 1
-
-        if new_index >= len(active_keywords):
-            # All keywords in this category used — reset and move on
-            new_index = 0
-            self._current_cat_index = (
-                (self._current_cat_index + 1) % len(self._categories)
-            )
-            logger.debug(
-                "Category '%s' rotation complete, moving to next.",
-                category.name,
-            )
-
-        category.rotation_index = new_index
-        await self._repo.update_rotation_index(category.id, new_index)
+        logger.debug(
+            "Queue advanced to index %d/%d.",
+            new_index + 1,
+            len(self._queue),
+        )
