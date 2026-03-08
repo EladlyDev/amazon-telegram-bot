@@ -73,7 +73,7 @@ class CategoryRotator:
         self._current_cat_index %= len(self._categories)
         category = self._categories[self._current_cat_index]
 
-        # Get active keywords for this category, sorted by sort_order
+        # Get active keywords for this category
         active_keywords = [kw for kw in category.keywords if kw.is_active]
         if not active_keywords:
             logger.warning(
@@ -81,18 +81,24 @@ class CategoryRotator:
             )
             return category, None
 
-        active_keywords.sort(key=lambda k: k.sort_order)
-
-        # Use rotation_index to pick the current keyword
-        kw_index = category.rotation_index % len(active_keywords)
-        keyword = active_keywords[kw_index]
+        # Sort or shuffle based on category's keyword_order setting
+        order_mode = getattr(category, "keyword_order", "sort_order")
+        if order_mode == "random":
+            import random
+            random.shuffle(active_keywords)
+            keyword = active_keywords[0]
+        else:
+            active_keywords.sort(key=lambda k: k.sort_order)
+            kw_index = category.rotation_index % len(active_keywords)
+            keyword = active_keywords[kw_index]
 
         logger.debug(
-            "Next rotation: [%s] keyword '%s' (index %d/%d)",
+            "Next rotation: [%s] keyword '%s' (index %d/%d, order=%s)",
             category.name,
             keyword.keyword,
-            kw_index + 1,
+            active_keywords.index(keyword) + 1,
             len(active_keywords),
+            order_mode,
         )
         return category, keyword
 

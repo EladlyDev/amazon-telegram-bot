@@ -203,6 +203,21 @@ class Repository:
             await session.delete(kw)
             return True
 
+    async def reorder_keywords(
+        self, category_id: int, keyword_ids: list[int]
+    ) -> None:
+        """Update ``sort_order`` for keywords based on the order of *keyword_ids*."""
+        async with get_session() as session:
+            for idx, kw_id in enumerate(keyword_ids):
+                stmt = (
+                    select(Keyword)
+                    .where(Keyword.id == kw_id, Keyword.category_id == category_id)
+                )
+                result = await session.execute(stmt)
+                kw = result.scalars().first()
+                if kw:
+                    kw.sort_order = idx
+
     async def update_keyword_usage(
         self, keyword_id: int, products_found: int = 0
     ) -> None:
@@ -236,7 +251,7 @@ class Repository:
     async def is_product_published(
         self, asin: str, cooldown_days: int = 30
     ) -> bool:
-        """Check if this ASIN was successfully published within the cooldown window."""
+        """Check if this ASIN was published or failed within the cooldown window."""
         async with get_session() as session:
             cutoff = datetime.utcnow() - timedelta(days=cooldown_days)
             stmt = (
@@ -244,7 +259,7 @@ class Repository:
                 .select_from(PublishedProduct)
                 .where(
                     PublishedProduct.asin == asin,
-                    PublishedProduct.status == "published",
+                    PublishedProduct.status.in_(["published", "failed"]),
                     PublishedProduct.published_at >= cutoff,
                 )
             )
@@ -631,7 +646,7 @@ class Repository:
                         SystemLog.component == "engine",
                         SystemLog.level == "WARNING",
                         SystemLog.action.in_(
-                            ["all_filtered", "no_results", "all_duplicates"]
+                            ["all_filtered", "no_results", "all_duplicates", "publish_failed"]
                         ),
                     )
                 )

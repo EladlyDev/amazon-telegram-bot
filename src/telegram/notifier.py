@@ -27,9 +27,23 @@ _LEVEL_EMOJI = {
 class AdminNotifier:
     """Sends notification messages to the bot administrator."""
 
-    def __init__(self, bot_token: str, admin_chat_id: str) -> None:
+    def __init__(
+        self, bot_token: str, admin_chat_id: str, repo=None,
+    ) -> None:
         self._bot = telegram.Bot(token=bot_token)
-        self._admin_chat_id = admin_chat_id
+        self._fallback_chat_id = admin_chat_id
+        self._repo = repo
+
+    async def _get_admin_chat_id(self) -> str:
+        """Read admin chat ID from DB, falling back to startup value."""
+        if self._repo:
+            try:
+                db_id = await self._repo.get_setting("telegram.admin_chat_id")
+                if db_id:
+                    return db_id.strip()
+            except Exception:
+                pass
+        return self._fallback_chat_id
 
     # ────────────────────────────────────────────────────────
     #  Public API
@@ -53,10 +67,12 @@ class AdminNotifier:
             f"⏰ {now}"
         )
 
+        admin_chat_id = await self._get_admin_chat_id()
+
         # Collect all chat IDs to notify
         targets: list[int | str] = []
-        if self._admin_chat_id:
-            targets.append(self._admin_chat_id)
+        if admin_chat_id:
+            targets.append(admin_chat_id)
 
         # In dev mode, also send to /start subscribers
         try:
@@ -66,7 +82,7 @@ class AdminNotifier:
                 from src.telegram.admin_bot import get_subscriber_ids
 
                 for sub_id in get_subscriber_ids():
-                    if str(sub_id) != str(self._admin_chat_id):
+                    if str(sub_id) != str(admin_chat_id):
                         targets.append(sub_id)
         except Exception:
             pass

@@ -202,7 +202,7 @@ async def get_category_warnings(
         limit=20, component="engine", level="WARNING",
     )
     # Filter to only category/keyword related actions
-    actions = {"all_filtered", "no_results", "all_duplicates", "search_error"}
+    actions = {"all_filtered", "no_results", "all_duplicates", "search_error", "publish_failed"}
     warnings = []
     for log in logs:
         if log.action in actions:
@@ -311,6 +311,27 @@ async def delete_keyword(
     ok = await repo.delete_keyword(keyword_id)
     if not ok:
         raise HTTPException(status_code=HTTP_404_NOT_FOUND, detail="Keyword not found")
+    return {"status": "ok"}
+
+
+@router.put("/categories/{category_id}/keywords/reorder")
+async def reorder_keywords(
+    category_id: int,
+    request: Request,
+    _user: dict = Depends(get_current_user),
+):
+    """Reorder keywords within a category.
+
+    Expects ``{"keyword_ids": [3, 1, 2]}`` — the order of IDs
+    determines the new ``sort_order`` values.
+    """
+    repo = request.app.state.repo
+    body = await request.json()
+    keyword_ids: list[int] = body.get("keyword_ids", [])
+    if not keyword_ids:
+        raise HTTPException(status_code=400, detail="keyword_ids required")
+
+    await repo.reorder_keywords(category_id, keyword_ids)
     return {"status": "ok"}
 
 

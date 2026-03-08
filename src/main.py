@@ -248,7 +248,7 @@ async def main() -> None:  # noqa: C901 — orchestration function
 
     bot_token = settings.telegram_bot_token or "fake:token"
     publisher = TelegramPublisher(bot_token)
-    notifier = AdminNotifier(bot_token, settings.telegram_admin_chat_id or "")
+    notifier = AdminNotifier(bot_token, settings.telegram_admin_chat_id or "", repo=repo)
 
     # ── 4. Engine + scheduler ─────────────────────────────
     from src.engine.formatter import MessageFormatter

@@ -348,6 +348,15 @@ class BotEngine:
         except TelegramPublishError as exc:
             logger.error("Telegram publish failed: %s", exc)
             await self._save_product(best, "failed", error_message=str(exc))
+            await self._repo.log_event(
+                level="WARNING",
+                component="engine",
+                action="publish_failed",
+                message=(
+                    f"'{keyword.keyword}': فشل نشر المنتج '{best.title[:50]}'. "
+                    f"السبب: {exc}"
+                ),
+            )
             await self._notifier.send_error(
                 f"فشل نشر المنتج: {best.title[:60]}\n{exc}"
             )
